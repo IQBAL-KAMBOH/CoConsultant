@@ -24,7 +24,8 @@ class FilePermissionController extends Controller
         $filePermission = FilePermission::updateOrCreate(
             [
                 'file_id' => $request->file_id,
-                'user_id' => $request->user_id
+                'user_id' => $request->user_id,
+                'permission' => $request->permission
             ],
             [
                 'permission' => $request->permission
@@ -46,10 +47,12 @@ class FilePermissionController extends Controller
         $request->validate([
             'file_id' => 'required|exists:files,id',
             'user_id' => 'required|exists:users,id',
+            'permission' => 'required|string|in:owner,view,upload,edit,delete,create_folder',
         ]);
 
         $deleted = FilePermission::where('file_id', $request->file_id)
             ->where('user_id', $request->user_id)
+            ->where('permission', $request->permission)
             ->delete();
 
         return response()->json([
@@ -72,6 +75,22 @@ class FilePermissionController extends Controller
         return response()->json([
             'status' => 'success',
             'file' => $file,
+            'permissions' => $permissions
+        ]);
+    }
+
+    /**
+     * List all permissions for a specific user
+     */
+    public function listByUser($userId)
+    {
+        $permissions = FilePermission::where('user_id', $userId)
+            ->with('file:id,name,type,path')
+            ->get();
+
+        return response()->json([
+            'status' => 'success',
+            'user_id' => $userId,
             'permissions' => $permissions
         ]);
     }

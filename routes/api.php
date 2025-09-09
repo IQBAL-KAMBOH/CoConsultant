@@ -38,4 +38,5 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::post('/files/permissions/assign', [FilePermissionController::class, 'assign']);
     Route::post('/files/permissions/remove', [FilePermissionController::class, 'remove']);
     Route::get('/files/permissions/list/{fileId}', [FilePermissionController::class, 'list']);
+    Route::get('/files/permissions/user/{userId}', [FilePermissionController::class, 'listByUser']); // 👈 new
 });
