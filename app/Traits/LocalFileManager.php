@@ -11,60 +11,132 @@ use Illuminate\Support\Facades\Storage;
 
 trait LocalFileManager
 {
+
+    public function ensureRootDirectory()
+    {
+        $rootName = 'CoConsultRoot';
+        $disk = Storage::disk('public'); // ✅ default Laravel public disk
+        $rootPath = $rootName;
+
+        // 1. Create physical directory if not exists
+        if (!$disk->exists($rootPath)) {
+            $disk->makeDirectory($rootPath);
+        }
+
+        // 2. Create DB entry if not exists
+        $rootFolder = File::firstOrCreate(
+            ['path' => $rootPath, 'type' => 'folder'],
+            [
+                'user_id' => 1, // 👈 assuming admin has ID=1
+                'name' => $rootName,
+                'size' => 0,
+            ]
+        );
+
+        // 3. Assign owner permission to admin if not exists
+        FilePermission::firstOrCreate([
+            'file_id' => $rootFolder->id,
+            'user_id' => 1, // admin
+            'permission' => 'owner',
+        ]);
+
+        return $rootFolder;
+    }
     /**
      * Permission check helper
      */
     protected function checkPermission($fileId, $action)
     {
         $user = Auth::guard('api')->user();
+        $file = File::find($fileId);
+
+        if (!$file) {
+            return false;
+        }
+
+        // ✅ Check if user is owner AND has "owner" permission explicitly
+        $hasOwnerPermission = FilePermission::where('file_id', $fileId)
+            ->where('user_id', $user->id)
+            ->where('permission', 'owner')
+            ->exists();
+
+        if ($file->user_id === $user->id && $hasOwnerPermission) {
+            return true; // full access for owner
+        }
+
+        // 🔑 Otherwise, check specific permission
         $permission = FilePermission::where('file_id', $fileId)
             ->where('user_id', $user->id)
+            ->where('permission', $action)
             ->first();
 
-        if (!$permission) return false;
+        if (!$permission) {
+            return false;
+        }
 
         $map = [
-            'view' => ['owner', 'view'],
-            'upload' => ['owner', 'upload'],
+            'view'          => ['owner', 'view'],
+            'upload'        => ['owner', 'upload'],
             'create_folder' => ['owner', 'create_folder'],
-            'edit' => ['owner', 'edit'],
-            'delete' => ['owner', 'delete'],
+            'edit'          => ['owner', 'edit'],
+            'delete'        => ['owner', 'delete'],
         ];
 
         return in_array($permission->permission, $map[$action] ?? []);
     }
 
+
+
     /**
      * List files & folders
      */
-    public function listFilesTrait($path = '/')
+    /**
+     * List files & folders by parent_id (default root)
+     */
+    public function listFilesTrait($parentId = null)
     {
-        $dbFiles = File::where('path', 'like', $path . '%')->get();
+        // If no parent_id is provided, assume root (CoConsultRoot)
+        $currentName = '';
+        $currentPath = '';
+        if (is_null($parentId)) {
+            $root = File::where('name', 'CoConsultRoot')->whereNull('parent_id')->first();
 
-        // Filter DB files by user permission
+            if (!$root) {
+                return ['status' => 'error', 'message' => 'Root folder not found'];
+            }
+
+            $parentId = $root->id;
+            $currentName = $root->name ?? null;
+            $currentPath = $root->path ?? null;
+        } else {
+            $root = File::find($parentId);
+            $parentId = $root->id ?? 0;
+            $currentName = $root->name ?? null;
+            $currentPath = $root->path ?? null;
+        }
+
+        // Fetch all children of the given folder
+        $dbFiles = File::where('parent_id', $parentId)->get();
+
+        // Filter by user permission
         $userFiles = $dbFiles->filter(function ($file) {
             return $this->checkPermission($file->id, 'view');
         })->values();
 
-        // Include only storage files that have DB record & permission
-        $storageFiles = Storage::disk('public')->files($path);
-        $storageFiles = collect($storageFiles)->filter(function ($filePath) use ($userFiles) {
-            return $userFiles->contains(fn($f) => $f->path === $filePath);
-        })->values();
-
-        $storageFolders = Storage::disk('public')->directories($path);
-        $storageFolders = collect($storageFolders)->filter(function ($folderPath) {
-            $folder = File::where('path', $folderPath)->where('type', 'folder')->first();
-            return $folder && $this->checkPermission($folder->id, 'view');
-        })->values();
+        // Split into folders and files
+        $folders = $userFiles->where('type', 'folder')->values();
+        $files   = $userFiles->where('type', 'file')->values();
 
         return [
-            'status' => 'success',
-            'files' => $userFiles,
-            'storage_files' => $storageFiles,
-            'storage_folders' => $storageFolders,
+            'status'  => 'success',
+            'id'  => $parentId,
+            'currentFolder'  => $currentName,
+            'currentPath'  => $currentPath,
+            'folders' => $folders,
+            'files'   => $files,
         ];
     }
+
 
 
     /**
@@ -101,6 +173,7 @@ trait LocalFileManager
             'type' => 'file',
             'path' => $storedPath,
             'size' => $uploadedFile->getSize(),
+            'parent_id' => $parentFolder->id
         ]);
 
         // Assign owner permission
@@ -127,10 +200,10 @@ trait LocalFileManager
     /**
      * Delete a file
      */
-    public function deleteFileTrait($filename)
+    public function deleteFileTrait($fileId)
     {
-        // Find file by name
-        $file = File::where('name', $filename)->first();
+        // Find file by id
+        $file = File::find($fileId);
 
         if (!$file) {
             return ['status' => 'error', 'message' => 'File not found'];
@@ -141,23 +214,45 @@ trait LocalFileManager
             return ['status' => 'error', 'message' => 'Permission denied'];
         }
 
-        // Delete from storage
-        if (Storage::disk('public')->exists($file->path)) {
+        // Recursive delete function
+        $this->deleteFileAndChildren($file);
+
+        return ['status' => 'success', 'message' => 'File and children deleted'];
+    }
+
+    /**
+     * Recursive deletion of file/folder and its children
+     */
+    protected function deleteFileAndChildren(File $file)
+    {
+        // Delete children first
+        $children = File::where('parent_id', $file->id)->get();
+        foreach ($children as $child) {
+            $this->deleteFileAndChildren($child);
+        }
+
+        // Delete from storage (if file)
+        if ($file->path && Storage::disk('public')->exists($file->path)) {
             Storage::disk('public')->delete($file->path);
         }
 
-        // Delete from DB
+        $filename = $file->name;
+
+        // Delete permissions
+        FilePermission::where('file_id', $file->id)->delete();
+
+
+
+        // Delete file record
         $file->delete();
 
-        // Log history
+        // Log parent delete action
         FileHistory::create([
             'file_id' => $file->id,
             'user_id' => auth()->id(),
             'action' => 'delete',
             'metadata' => ['name' => $filename],
         ]);
-
-        return ['status' => 'success', 'message' => 'File deleted'];
     }
 
 
@@ -166,49 +261,37 @@ trait LocalFileManager
      */
     public function createFolderTrait($name, $path = '/')
     {
-        // Normalize path
-        $path = trim($path, '/');
-
-        // Find parent folder in DB
-        $parentFolder = File::where('path', $path)->where('type', 'folder')->first();
-
-        if (!$parentFolder) {
-            return ['status' => 'error', 'message' => 'Parent folder not found in DB'];
-        }
-
-        // Check permission
-        if (!$this->checkPermission($parentFolder->id, 'create_folder')) {
+        $root = $this->ensureRootDirectory();
+        $parentFolder = File::where('path', $path)->first();
+        if ($parentFolder && !$this->checkPermission($parentFolder->id, 'create_folder')) {
             return ['status' => 'error', 'message' => 'Permission denied'];
         }
 
-        // Create full folder path
-        $fullPath = $path ? $path . '/' . $name : $name;
 
-        // Create folder in storage
+
+        $fullPath = trim($path, '/') . '/' . $name;
         Storage::disk('public')->makeDirectory($fullPath);
 
-        // Create folder entry in DB
         $folder = File::create([
             'user_id' => auth()->id(),
             'name' => $name,
             'type' => 'folder',
             'path' => $fullPath,
             'size' => 0,
+            'parent_id' => $parentFolder->id
         ]);
 
-        // Assign owner permission
         FilePermission::create([
             'file_id' => $folder->id,
             'user_id' => auth()->id(),
             'permission' => 'owner',
         ]);
 
-        // Log history
         FileHistory::create([
             'file_id' => $folder->id,
             'user_id' => auth()->id(),
             'action' => 'create_folder',
-            'metadata' => ['name' => $name, 'path' => $fullPath],
+            'metadata' => ['name' => $name],
         ]);
 
         return [
@@ -216,7 +299,6 @@ trait LocalFileManager
             'folder' => $folder,
         ];
     }
-
 
     /**
      * Delete a folder

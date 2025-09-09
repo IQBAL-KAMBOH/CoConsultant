@@ -12,8 +12,8 @@ class FilesController extends Controller
 
     public function listFiles(Request $request)
     {
-        $path = $request->get('path', '/');
-        return response()->json($this->listFilesTrait($path));
+        $fileId = $request->get('file_id', null);
+        return response()->json($this->listFilesTrait($fileId));
     }
 
     public function upload(Request $request)
@@ -22,9 +22,9 @@ class FilesController extends Controller
         return response()->json($this->uploadFileTrait($request, $path));
     }
 
-    public function deleteFile($filename)
+    public function deleteFile($id)
     {
-        return response()->json($this->deleteFileTrait($filename));
+        return response()->json($this->deleteFileTrait($id));
     }
 
     public function createFolder(Request $request)
