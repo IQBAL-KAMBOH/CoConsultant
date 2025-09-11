@@ -9,10 +9,12 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\PermissionController;
 use App\Http\Controllers\MicrosoftAuthController;
+use App\Http\Controllers\OneDriveController;
 
 // Auth Routes
 Route::post('/register', [AuthController::class, 'register'])->name('register');
 Route::post('/login', [AuthController::class, 'login'])->name('login');
+
 
 
 
@@ -39,4 +41,19 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::post('/files/permissions/remove', [FilePermissionController::class, 'remove']);
     Route::get('/files/permissions/list/{fileId}', [FilePermissionController::class, 'list']);
     Route::get('/files/permissions/user/{userId}', [FilePermissionController::class, 'listByUser']); // 👈 new
+
+
+
+    Route::prefix('onedrive')->group(function () {
+        // List root drive items
+        Route::get('/root', [OneDriveController::class, 'root']);
+        // Create folder
+        Route::post('/folder/{name}', [OneDriveController::class, 'createFolder']);
+        // Upload file
+        Route::post('/upload', [OneDriveController::class, 'uploadFile']);
+        // Download file
+        Route::get('/download/{itemId}', [OneDriveController::class, 'downloadFile']);
+        // Delete file/folder
+        Route::delete('/delete/{itemId}', [OneDriveController::class, 'deleteItem']);
+    });
 });

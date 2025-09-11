@@ -30,13 +30,14 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+
     'microsoft' => [
+        'tenant_id' => env('MICROSOFT_TENANT_ID'),
         'client_id' => env('MICROSOFT_CLIENT_ID'),
         'client_secret' => env('MICROSOFT_CLIENT_SECRET'),
-        'tenant_id' => env('MICROSOFT_TENANT_ID', 'common'),
-        'onedrive_owner_email' => env('MICROSOFT_ONEDRIVE_OWNER_EMAIL'),
-        'redirect' => env('MICROSOFT_REDIRECT'),
+        'storage_user' => env('MICROSOFT_STORAGE_USER'),
     ],
+
 
 
 
