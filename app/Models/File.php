@@ -15,7 +15,11 @@ class File extends Model
         'name',
         'type',
         'path',
-        'size'
+        'size',
+        'storage_type',
+        'onedrive_file_id',
+        'web_url',
+        'download_url'
     ];
 
     public function owner()

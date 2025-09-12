@@ -46,14 +46,14 @@ Route::middleware(['jwt.auth'])->group(function () {
 
     Route::prefix('onedrive')->group(function () {
         // List root drive items
-        Route::get('/root', [OneDriveController::class, 'root']);
+        Route::get('/list', [OneDriveController::class, 'root']);
         // Create folder
-        Route::post('/folder/{name}', [OneDriveController::class, 'createFolder']);
+        Route::post('/folders/create', [OneDriveController::class, 'createFolder']);
         // Upload file
-        Route::post('/upload', [OneDriveController::class, 'uploadFile']);
-        // Download file
-        Route::get('/download/{itemId}', [OneDriveController::class, 'downloadFile']);
+        Route::post('/upload', [OneDriveController::class, 'upload']);
         // Delete file/folder
         Route::delete('/delete/{itemId}', [OneDriveController::class, 'deleteItem']);
+        Route::get('/sync', [OneDriveController::class, 'sync']);
+        Route::post('/move/{fileId}', [OneDriveController::class, 'move']);
     });
 });

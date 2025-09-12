@@ -1,34 +1,97 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Traits\OneDriveFileManager;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class OneDriveController extends Controller
 {
     use OneDriveFileManager;
 
-    public function root()
+    /** List root or child items */
+    public function root(Request $request)
     {
-        $items = $this->listOneDriveFiles();
-        return response()->json(['status' => 'ok', 'data' => $items]);
+        $items = $this->listOneDriveFiles($request->parent_id ?? null);
+        return response()->json([
+            'status' => 'ok',
+            'data'   => $items
+        ]);
     }
 
+    /** Create a new folder */
     public function createFolder(Request $request)
     {
-        $folder = $this->createOneDriveFolder($request->name, $request->parent_id ?? null);
-        return response()->json(['status' => 'ok', 'folder' => $folder]);
+        $validator = Validator::make($request->all(), [
+            'name'      => 'required|string|max:255',
+            'parent_id' => 'nullable|string'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $folder = $this->createOneDriveFolder($request->name, $request->parent_id);
+
+        return response()->json([
+            'status' => 'ok',
+            'folder' => $folder
+        ]);
     }
 
+    /** Upload a file */
     public function upload(Request $request)
     {
-        $file = $this->uploadFileToOneDrive($request->folder_id ?? null, $request->file('file'));
-        return response()->json(['status' => 'ok', 'file' => $file]);
+        $validator = Validator::make($request->all(), [
+            'file'      => 'required|file',
+            'parent_id' => 'nullable|string'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $file = $this->uploadFileToOneDrive(
+            $request->parent_id,
+            $request->file('file')
+        );
+
+        return response()->json([
+            'status' => 'ok',
+            'file'   => $file
+        ]);
     }
 
-    public function delete($id)
+    /** Delete a file or folder */
+    public function deleteItem($id)
     {
         $result = $this->deleteOneDriveItem($id);
+
         return response()->json($result);
+    }
+    public function sync()
+    {
+
+        $result = $this->syncOneDrive();
+
+        return response()->json($result);
+    }
+    public function move(Request $request, string $fileId)
+    {
+        $request->validate([
+            'new_parent_id' => 'required|string',
+            'new_name'      => 'nullable|string|max:255',
+        ]);
+
+        $newparentId = $request->new_parent_id ?? null;
+
+        return $this->moveOneDrive($fileId, $newparentId);
     }
 }

@@ -34,19 +34,19 @@ class OneDriveService
 
         return $response->json()['access_token'];
     }
-
-    public function listDriveRoot()
+    public function syncDrive($deltaLink = null)
     {
         $token = $this->getAccessToken();
+        $user = config('services.microsoft.storage_user');
 
-        // Replace this with your OneDrive storage user (email or id)
-        $userPrincipalName = config('services.microsoft.storage_user');
+        $url = $deltaLink
+            ? $deltaLink
+            : "https://graph.microsoft.com/v1.0/users/{$user}/drive/root/delta";
 
-        $response = Http::withToken($token)
-            ->get("https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/root/children");
+        $response = Http::withToken($token)->get($url);
 
         if ($response->failed()) {
-            throw new \Exception("Failed to fetch OneDrive root: " . $response->body());
+            throw new \Exception("Failed to sync drive: " . $response->body());
         }
 
         return $response->json();
