@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
+use Exception;
 
 class OneDriveService
 {
@@ -50,5 +51,26 @@ class OneDriveService
         }
 
         return $response->json();
+    }
+    public function getDownloadUrl(string $oneDriveFileId): ?string
+    {
+        try {
+            $token = $this->getAccessToken();
+            $userPrincipalName = config('services.microsoft.storage_user');
+
+            $url = "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/items/{$oneDriveFileId}";
+
+            $response = Http::withToken($token)->get($url);
+
+            if ($response->failed()) {
+                throw new Exception("Failed to fetch file metadata: " . $response->body());
+            }
+
+            $data = $response->json();
+
+            return $data['@microsoft.graph.downloadUrl'] ?? null;
+        } catch (Exception $e) {
+            throw new Exception("Error generating download URL: " . $e->getMessage());
+        }
     }
 }

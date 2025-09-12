@@ -377,4 +377,45 @@ trait OneDriveFileManager
             ], 500);
         }
     }
+
+    public function handleFileDownloadUrl($fileId)
+    {
+        try {
+            $file = File::find($fileId);
+            if (!$file) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'File not found',
+                ], 404);
+            }
+
+            // ✅ check permission if you want
+            if (!$this->checkPermission($file, 'view')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Permission denied',
+                ], 403);
+            }
+
+            $downloadUrl = $this->oneDrive()->getDownloadUrl($file->onedrive_file_id);
+
+            if (!$downloadUrl) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Could not generate download URL',
+                ], 500);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'download_url' => $downloadUrl,
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Exception while generating download URL',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }

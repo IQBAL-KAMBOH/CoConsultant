@@ -94,4 +94,8 @@ class OneDriveController extends Controller
 
         return $this->moveOneDrive($fileId, $newparentId);
     }
+    public function getFileDownloadUrl($id)
+    {
+        return $this->handleFileDownloadUrl($id);
+    }
 }
