@@ -90,7 +90,8 @@ trait OneDriveFileManager
             }
         } else {
             // ✅ If creating inside a folder, check permission
-            if (!$this->checkPermission($parentId, 'create_folder')) {
+            $dbFile = File::find($parentId);
+            if (!$this->checkPermission($dbFile, 'create_folder')) {
                 return [
                     'status'  => 'error',
                     'message' => 'Permission denied for this folder'
