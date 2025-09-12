@@ -80,6 +80,23 @@ trait OneDriveFileManager
     /** Create a folder in OneDrive & record in DB */
     public function createOneDriveFolder($name, $parentId = null)
     {
+        // ✅ If no parent folder → check role
+        if (!$parentId) {
+            if (!$this->logedInUser->hasRole('admin')) {
+                return [
+                    'status'  => 'error',
+                    'message' => 'Only admins can create folders in root'
+                ];
+            }
+        } else {
+            // ✅ If creating inside a folder, check permission
+            if (!$this->checkPermission($parentId, 'create_folder')) {
+                return [
+                    'status'  => 'error',
+                    'message' => 'Permission denied for this folder'
+                ];
+            }
+        }
         $token = $this->oneDrive()->getAccessToken();
         $userPrincipalName = config('services.microsoft.storage_user');
 
