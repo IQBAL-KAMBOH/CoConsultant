@@ -60,9 +60,19 @@ Route::middleware(['jwt.auth'])->group(function () {
         Route::get('/sync', [OneDriveController::class, 'sync']);
         Route::post('/move/{fileId}', [OneDriveController::class, 'move']);
         Route::get('/file/{id}/download-url', [OneDriveController::class, 'getFileDownloadUrl']);
+
+        Route::post('/trash/{id}', [OneDriveController::class, 'trash']);
+        Route::post('/bulk-trash', [OneDriveController::class, 'bulkTrash']);
+        Route::post('/restore/{id}', [OneDriveController::class, 'restore']);
+        Route::post('/bulk-restore', [OneDriveController::class, 'bulkRestore']);
+        Route::get('/trashed', [OneDriveController::class, 'trashed']);
     });
     Route::prefix('files/reports')->group(function () {
         Route::post('/generate', [FileReportController::class, 'generate']);
         Route::get('/', [FileReportController::class, 'list']);
+    });
+    Route::prefix('starred-files')->group(function () {
+        Route::get('/', [AuthController::class, 'starredFiles']);
+        Route::post('/{id}/star', [AuthController::class, 'toggleStar']);
     });
 });

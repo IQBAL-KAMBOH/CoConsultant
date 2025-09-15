@@ -103,4 +103,46 @@ class OneDriveController extends Controller
     {
         return $this->handleFileDownloadUrl($id);
     }
+    public function trash($id)
+    {
+        $result = $this->trashFile($id);
+        return response()->json($result);
+    }
+    public function bulkTrash(Request $request)
+    {
+        $request->validate([
+            'file_ids' => 'required|array',
+            'file_ids.*' => 'integer|exists:files,id'
+        ]);
+
+        $result = $this->trashBulkFiles($request->file_ids);
+
+        return response()->json($result);
+    }
+
+    public function restore($id)
+    {
+        $result = $this->restoreFile($id);
+        return response()->json($result);
+    }
+    public function bulkRestore(Request $request)
+    {
+        $request->validate([
+            'file_ids' => 'required|array',
+            'file_ids.*' => 'integer|exists:files,id'
+        ]);
+        $result = $this->bulkRestoreFiles($request->file_ids);
+
+        return response()->json($result);
+    }
+
+    public function trashed(Request $request)
+    {
+        $items = $this->listTrashedFiles($request->user_id ?? null);
+        return response()->json([
+            'status' => 'ok',
+            'data'   => $items
+        ]);
+    }
+
 }

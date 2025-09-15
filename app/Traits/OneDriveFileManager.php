@@ -195,7 +195,7 @@ trait OneDriveFileManager
     /** Delete item */
     public function deleteOneDriveItem($fileId)
     {
-        $file = File::find($fileId);
+        $file = File::withTrashed()->find($fileId);
         if (!$file) return ['status' => 'error', 'message' => 'File not found'];
 
         // 🔑 Check delete permission
@@ -217,6 +217,7 @@ trait OneDriveFileManager
 
         return ['status' => 'success'];
     }
+
 
     protected function deleteFileAndChildren($file)
     {
@@ -420,6 +421,155 @@ trait OneDriveFileManager
                 'message' => 'Exception while generating download URL',
                 'error' => $e->getMessage(),
             ], 500);
+        }
+    }
+
+
+
+
+
+
+    //////// Trash
+
+
+    public function trashFile($fileId)
+    {
+        $file = File::find($fileId);
+        if (!$file) {
+            return response()->json(['status' => 'error', 'message' => 'File not found'], 404);
+        }
+
+        if (!$this->checkPermission($file, 'delete')) {
+            return response()->json(['status' => 'error', 'message' => 'Permission denied'], 403);
+        }
+
+        DB::transaction(function () use ($file) {
+            $this->softDeleteRecursive($file);
+        });
+
+        FileHistory::create([
+            'file_id'  => $file->id,
+            'user_id'  => $this->logedInUser->id,
+            'action'   => 'trash',
+            'metadata' => ['name' => $file->name],
+        ]);
+
+        return response()->json(['status' => 'success', 'message' => 'File moved to trash']);
+    }
+    private function getAllChildrenIds($fileIds)
+    {
+        $allIds = collect($fileIds);
+
+        $children = File::whereIn('parent_id', $fileIds)->pluck('id');
+
+        if ($children->isNotEmpty()) {
+            $allIds = $allIds->merge($this->getAllChildrenIds($children));
+        }
+
+        return $allIds;
+    }
+
+    // ✅ Bulk Trash (Soft Delete + Children)
+    public function trashBulkFiles($file_ids)
+    {
+        $userId = $userId ?? $this->logedInUser->id;
+        $allIds = $this->getAllChildrenIds($file_ids);
+        File::whereIn('id', $allIds)
+            ->where('user_id', $userId)
+            ->delete(); // Soft delete
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Files (with children) moved to trash successfully'
+        ]);
+    }
+    public function bulkRestoreFiles($file_ids)
+    {
+
+        $userId = $userId ?? $this->logedInUser->id;
+        $allIds = $this->getAllChildrenIds($file_ids);
+
+        File::withTrashed()
+            ->whereIn('id', $allIds)
+            ->where('user_id', $userId)
+            ->restore();
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Files (with children) restored successfully'
+        ]);
+    }
+    /** Recursive soft delete */
+    protected function softDeleteRecursive(File $file)
+    {
+        $children = File::where('parent_id', $file->id)->get();
+        foreach ($children as $child) {
+            $this->softDeleteRecursive($child);
+        }
+        $file->delete(); // soft delete
+    }
+
+
+
+    public function listTrashedFiles($userId = null)
+    {
+        $userId = $userId ?? $this->logedInUser->id;
+
+        $fileIds = FilePermission::where('user_id', $userId)
+            ->whereIn('permission', ['owner', 'view'])
+            ->pluck('file_id');
+
+        $trashed = File::onlyTrashed()->whereIn('id', $fileIds)->get();
+
+        return response()->json([
+            'status' => 'success',
+            'files'  => $trashed,
+        ]);
+    }
+
+
+
+
+
+
+
+
+
+
+    /////////////////////////////  Restore
+
+    public function restoreFile($fileId)
+    {
+        $file = File::withTrashed()->find($fileId);
+        if (!$file) {
+            return response()->json(['status' => 'error', 'message' => 'File not found'], 404);
+        }
+
+        if (!$this->checkPermission($file, 'restore')) {
+            return response()->json(['status' => 'error', 'message' => 'Permission denied'], 403);
+        }
+
+        DB::transaction(function () use ($file) {
+            $this->restoreRecursive($file);
+        });
+
+        FileHistory::create([
+            'file_id'  => $file->id,
+            'user_id'  => $this->logedInUser->id,
+            'action'   => 'restore',
+            'metadata' => ['name' => $file->name],
+        ]);
+
+        return response()->json(['status' => 'success', 'message' => 'File restored successfully']);
+    }
+
+    /** Recursive restore */
+    protected function restoreRecursive(File $file)
+    {
+        $file->restore();
+
+        $children = File::withTrashed()->where('parent_id', $file->id)->get();
+        foreach ($children as $child) {
+            $this->restoreRecursive($child);
         }
     }
 }

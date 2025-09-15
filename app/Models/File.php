@@ -46,4 +46,9 @@ class File extends Model
     {
         return $this->hasMany(File::class, 'parent_id');
     }
+    public function starredBy()
+    {
+        return $this->belongsToMany(User::class, 'file_stars')
+            ->withTimestamps();
+    }
 }

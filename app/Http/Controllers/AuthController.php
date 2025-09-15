@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\File;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -168,6 +169,48 @@ class AuthController extends Controller
                 'roles'         => $user->getRoleNames(),
                 'permissions'   => $user->getAllPermissions()->pluck('name'),
             ]
+        ]);
+    }
+    /**
+     * List all starred files for the authenticated user
+     */
+    public function starredFiles()
+    {
+        $files = Auth::guard('api')->user()->starredFiles()->get();
+
+        return response()->json([
+            'status' => 'ok',
+            'data'   => $files
+        ]);
+    }
+
+    /**
+     * Toggle star/unstar for a file (per user)
+     */
+    public function toggleStar($id)
+    {
+        $user = Auth::guard('api')->user();
+        $file = File::find($id);
+        if (!$file) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'File Not Found',
+            ]);
+        }
+
+        if ($user->starredFiles()->where('file_id', $file->id)->exists()) {
+            // Unstar
+            $user->starredFiles()->detach($file->id);
+            $message = 'File unstarred';
+        } else {
+            // Star
+            $user->starredFiles()->attach($file->id);
+            $message = 'File starred';
+        }
+
+        return response()->json([
+            'status'  => 'ok',
+            'message' => $message,
         ]);
     }
 }

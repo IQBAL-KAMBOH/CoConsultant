@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Models;
+
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -11,7 +12,7 @@ use Spatie\Permission\Traits\HasRoles; // ✅ Add this
 
 class User extends Authenticatable implements JWTSubject
 {
-     use HasApiTokens, HasFactory, Notifiable, HasRoles;
+    use HasApiTokens, HasFactory, Notifiable, HasRoles;
 
     /**
      * The attributes that are mass assignable.
@@ -47,7 +48,7 @@ class User extends Authenticatable implements JWTSubject
         'email_verified_at' => 'datetime',
     ];
 
-     /**
+    /**
      * Get the identifier that will be stored in the subject claim of the JWT.
      *
      * @return mixed
@@ -70,5 +71,9 @@ class User extends Authenticatable implements JWTSubject
     {
         return $this->hasMany(Todo::class);
     }
-
+    public function starredFiles()
+    {
+        return $this->belongsToMany(File::class, 'file_stars')
+            ->withTimestamps();
+    }
 }
