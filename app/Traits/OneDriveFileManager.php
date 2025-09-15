@@ -131,7 +131,7 @@ trait OneDriveFileManager
             'file_id' => $file->id,
             'user_id' => $this->logedInUser->id,
             'action' => 'create_folder',
-            'metadata' => ['onedrive_id' => $data['id']],
+            'metadata' => ['onedrive_file_id' => $data['id']],
         ]);
 
         return $file;
@@ -186,7 +186,7 @@ trait OneDriveFileManager
             'file_id'  => $file->id,
             'user_id'  => $this->logedInUser->id,
             'action'   => 'upload',
-            'metadata' => ['onedrive_id' => $data['id']],
+            'metadata' => ['onedrive_file_id' => $data['id']],
         ]);
 
         return $file;
@@ -378,6 +378,46 @@ trait OneDriveFileManager
             return response()->json([
                 'status' => 'error',
                 'message' => 'Move failed',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    public function renameOneDriveFile($fileId, $name)
+    {
+        try {
+            $file = File::find($fileId);
+            if (!$file) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'File not found in DB',
+                ], 404);
+            }
+
+            // 1. Rename in OneDrive
+            $oneDriveResponse = $this->oneDrive()->rename($file->onedrive_file_id, $name);
+
+            // 2. Update local DB
+            $file->name = $name;
+            $file->save();
+
+
+            FileHistory::create([
+                'file_id'  => $file->id,
+                'user_id'  => $this->logedInUser->id,
+                'action'   => 'rename',
+                'metadata' => ['new_name' => $name],
+            ]);
+
+            return response()->json([
+                'status' => 'ok',
+                'message' => 'File renamed successfully',
+                'file' => $file,
+                'onedrive' => $oneDriveResponse
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Rename failed',
                 'error' => $e->getMessage(),
             ], 500);
         }

@@ -59,6 +59,8 @@ Route::middleware(['jwt.auth'])->group(function () {
         Route::delete('/delete/{itemId}', [OneDriveController::class, 'deleteItem']);
         Route::get('/sync', [OneDriveController::class, 'sync']);
         Route::post('/move/{fileId}', [OneDriveController::class, 'move']);
+        Route::post('/rename/{fileId}', [OneDriveController::class, 'rename']);
+
         Route::get('/file/{id}/download-url', [OneDriveController::class, 'getFileDownloadUrl']);
 
         Route::post('/trash/{id}', [OneDriveController::class, 'trash']);

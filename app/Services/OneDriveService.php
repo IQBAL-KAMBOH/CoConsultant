@@ -73,4 +73,26 @@ class OneDriveService
             throw new Exception("Error generating download URL: " . $e->getMessage());
         }
     }
+    public function rename(string $oneDriveFileId, string $newName): array
+    {
+        try {
+            $token = $this->getAccessToken();
+            $userPrincipalName = config('services.microsoft.storage_user');
+
+            $url = "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/items/{$oneDriveFileId}";
+
+            $response = Http::withToken($token)
+                ->patch($url, [
+                    'name' => $newName
+                ]);
+
+            if ($response->failed()) {
+                throw new Exception("Failed to rename file: " . $response->body());
+            }
+
+            return $response->json();
+        } catch (Exception $e) {
+            throw new Exception("Error renaming OneDrive file: " . $e->getMessage());
+        }
+    }
 }

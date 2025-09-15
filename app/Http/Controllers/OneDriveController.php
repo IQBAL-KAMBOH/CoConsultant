@@ -88,7 +88,7 @@ class OneDriveController extends Controller
 
         return response()->json($result);
     }
-    public function move(Request $request, string $fileId)
+    public function move(Request $request, $fileId)
     {
         $request->validate([
             'new_parent_id' => 'required|string',
@@ -98,6 +98,15 @@ class OneDriveController extends Controller
         $newparentId = $request->new_parent_id ?? null;
 
         return $this->moveOneDrive($fileId, $newparentId);
+    }
+    public function rename(Request $request, $fileId)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+        ]);
+        $name = $request->name ?? null;
+
+        return $this->renameOneDriveFile($fileId,$name);
     }
     public function getFileDownloadUrl($id)
     {
@@ -144,5 +153,4 @@ class OneDriveController extends Controller
             'data'   => $items
         ]);
     }
-
 }
