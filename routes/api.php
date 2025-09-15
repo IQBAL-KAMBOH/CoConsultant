@@ -68,6 +68,10 @@ Route::middleware(['jwt.auth'])->group(function () {
         Route::post('/restore/{id}', [OneDriveController::class, 'restore']);
         Route::post('/bulk-restore', [OneDriveController::class, 'bulkRestore']);
         Route::get('/trashed', [OneDriveController::class, 'trashed']);
+
+
+        Route::get('/storage-usage', [OneDriveController::class, 'storageUsage']);
+        Route::get('/recent-files', [OneDriveController::class, 'recentFiles']);
     });
     Route::prefix('files/reports')->group(function () {
         Route::post('/generate', [FileReportController::class, 'generate']);

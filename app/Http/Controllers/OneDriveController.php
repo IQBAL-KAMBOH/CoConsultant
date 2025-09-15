@@ -106,7 +106,7 @@ class OneDriveController extends Controller
         ]);
         $name = $request->name ?? null;
 
-        return $this->renameOneDriveFile($fileId,$name);
+        return $this->renameOneDriveFile($fileId, $name);
     }
     public function getFileDownloadUrl($id)
     {
@@ -152,5 +152,36 @@ class OneDriveController extends Controller
             'status' => 'ok',
             'data'   => $items
         ]);
+    }
+    public function storageUsage()
+    {
+        try {
+            $usage = $this->getStorageUsage();
+            return response()->json([
+                'status' => 'success',
+                'data' => $usage
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function recentFiles()
+    {
+        try {
+            $files = $this->getRecentFiles();
+            return response()->json([
+                'status' => 'success',
+                'data' => $files
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 }

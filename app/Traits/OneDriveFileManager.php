@@ -569,12 +569,6 @@ trait OneDriveFileManager
 
 
 
-
-
-
-
-
-
     /////////////////////////////  Restore
 
     public function restoreFile($fileId)
@@ -611,5 +605,25 @@ trait OneDriveFileManager
         foreach ($children as $child) {
             $this->restoreRecursive($child);
         }
+    }
+    public function getStorageUsage()
+    {
+        return $this->oneDrive()->getStorageUsage();
+    }
+
+    public function getRecentFiles()
+    {
+        $user = Auth::guard('api')->user();
+
+        $recents = FileHistory::with('file')
+            ->where('user_id', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'status' => 'ok',
+            'data'   => $recents
+        ]);
     }
 }
