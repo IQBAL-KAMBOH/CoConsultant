@@ -23,9 +23,10 @@ class UserController extends Controller
     public function index()
     {
         $data = User::with('roles')
-            ->whereDoesntHave('roles', function ($query) {
-                $query->whereIn('name', ['admin', 'supp']);
-            })
+            // ->whereDoesntHave('roles', function ($query) {
+            //     $query->whereIn('name', ['admin', 'supp']);
+            // })
+            ->orderBy('created_at','desc')
             ->get();
 
         return response()->json([
@@ -62,7 +63,7 @@ class UserController extends Controller
                 return $user->load('roles');
             });
 
-            return response()->json($user, 201);
+            return response()->json($user, 200);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to create user',

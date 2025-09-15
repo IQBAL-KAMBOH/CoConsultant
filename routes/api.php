@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\FilePermissionController;
+use App\Http\Controllers\Api\FileReportController;
 use App\Http\Controllers\Api\FilesController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\TodoController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\PermissionController;
+use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\MicrosoftAuthController;
 use App\Http\Controllers\OneDriveController;
 
@@ -58,5 +60,9 @@ Route::middleware(['jwt.auth'])->group(function () {
         Route::get('/sync', [OneDriveController::class, 'sync']);
         Route::post('/move/{fileId}', [OneDriveController::class, 'move']);
         Route::get('/file/{id}/download-url', [OneDriveController::class, 'getFileDownloadUrl']);
+    });
+    Route::prefix('files/reports')->group(function () {
+        Route::post('/generate', [FileReportController::class, 'generate']);
+        Route::get('/', [FileReportController::class, 'list']);
     });
 });
