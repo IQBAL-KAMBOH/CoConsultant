@@ -39,42 +39,28 @@ trait OneDriveFileManager
     }
 
     /** List files in a OneDrive folder */
-    public function listOneDriveFiles($parentId = null)
+    public function listOneDriveFiles($parentId = null, $userId = null)
     {
-        $token = $this->oneDrive()->getAccessToken();
-        $userPrincipalName = config('services.microsoft.storage_user');
-        $parent = $parentId ? File::find($parentId) : null;
-        $parentOneDriveId = $parent?->onedrive_file_id;
 
-        $url = $parentOneDriveId
-            ? "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/items/{$parentOneDriveId}/children"
-            : "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/root/children";
 
-        $response = Http::withToken($token)->get($url);
+        // If no parentId, fetch the root folder record
+        if (!$parentId && !$userId) {
+            $root = File::where('name', 'root')
+                ->whereNull('parent_id') // root has no parent
+                ->first();
 
-        if ($response->failed()) {
-            throw new \Exception("Failed to list OneDrive files: " . $response->body());
+            $parentId = $root?->id; // safe null check
         }
 
-        $items = $response->json()['value'] ?? [];
+        $userId = $userId ?? $this->logedInUser->id;
+        // Get file IDs where user has view/owner permission
+        $fileIds = FilePermission::where('user_id', $userId)
+            ->whereIn('permission', ['owner', 'view'])
+            ->pluck('file_id');
 
-        $mapped = collect($items)->map(function ($item) {
-            return [
-                'id' => $item['id'],
-                'name' => $item['name'],
-                'type' => isset($item['folder']) ? 'folder' : 'file',
-                'size' => $item['size'] ?? 0,
-                'webUrl' => $item['webUrl'] ?? null,
-
-            ];
-        });
-
-        // 🔑 Check permissions from DB
-        $dbFiles = File::whereIn('onedrive_file_id', $mapped->pluck('id'))->get();
-
-        $userFiles = $dbFiles->filter(fn($file) => $this->checkPermission($file, 'view'));
-
-        return $userFiles->values();
+        return File::whereIn('id', $fileIds)
+            ->when($parentId, fn($q) => $q->where('parent_id', $parentId))
+            ->get();
     }
 
     /** Create a folder in OneDrive & record in DB */

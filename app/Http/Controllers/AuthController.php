@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use Illuminate\Support\Facades\Storage;
 
 class AuthController extends Controller
 {
@@ -48,18 +49,29 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $request->validate([
-            'name'     => 'required|string|max:255',
-            'email'    => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:6',
+            'name'          => 'required|string|max:255',
+            'last_name'     => 'nullable|string|max:255',
+            'email'         => 'required|string|email|max:255|unique:users',
+            'password'      => 'required|string|min:6',
+            'phone_number'  => 'nullable|string|max:20',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ]);
+
+        $profilePhotoPath = null;
+        if ($request->hasFile('profile_photo')) {
+            $profilePhotoPath = $request->file('profile_photo')->store('profile_photos', 'public');
+        }
 
         $user = User::create([
-            'name'     => $request->name,
-            'email'    => $request->email,
-            'password' => Hash::make($request->password),
+            'name'          => $request->name,
+            'last_name'     => $request->last_name,
+            'email'         => $request->email,
+            'password'      => Hash::make($request->password),
+            'phone_number'  => $request->phone_number,
+            'profile_photo' => $profilePhotoPath,
         ]);
 
-        $user->assignRole('user'); // default role
+        $user->assignRole('user');
 
         $token = Auth::guard('api')->login($user);
 
@@ -67,11 +79,14 @@ class AuthController extends Controller
             'status'  => 'success',
             'message' => 'User created successfully',
             'user'    => [
-                'id'          => $user->id,
-                'name'        => $user->name,
-                'email'       => $user->email,
-                'roles'       => $user->getRoleNames(),
-                'permissions' => $user->getAllPermissions()->pluck('name'),
+                'id'            => $user->id,
+                'name'          => $user->name,
+                'last_name'     => $user->last_name,
+                'email'         => $user->email,
+                'phone_number'  => $user->phone_number,
+                'profile_photo' => $user->profile_photo ? asset('storage/' . $user->profile_photo) : null,
+                'roles'         => $user->getRoleNames(),
+                'permissions'   => $user->getAllPermissions()->pluck('name'),
             ],
             'authorisation' => [
                 'token' => $token,
@@ -79,6 +94,7 @@ class AuthController extends Controller
             ]
         ]);
     }
+
 
     public function logout()
     {
@@ -106,6 +122,51 @@ class AuthController extends Controller
             'authorisation' => [
                 'token' => Auth::guard('api')->refresh(),
                 'type'  => 'bearer',
+            ]
+        ]);
+    }
+    public function updateProfile(Request $request)
+    {
+        $user = Auth::guard('api')->user();
+
+        $request->validate([
+            'name'          => 'sometimes|string|max:255',
+            'last_name'     => 'sometimes|string|max:255',
+            'email'         => 'sometimes|email|unique:users,email,' . $user->id,
+            'password'      => 'sometimes|min:6|confirmed',
+            'phone_number'  => 'sometimes|string|max:20',
+            'profile_photo' => 'sometimes|image|mimes:jpg,jpeg,png|max:2048',
+        ]);
+
+        if ($request->has('name')) $user->name = $request->name;
+        if ($request->has('last_name')) $user->last_name = $request->last_name;
+        if ($request->has('email')) $user->email = $request->email;
+        if ($request->has('password')) $user->password = bcrypt($request->password);
+        if ($request->has('phone_number')) $user->phone_number = $request->phone_number;
+
+        if ($request->hasFile('profile_photo')) {
+            // delete old photo if exists
+            if ($user->profile_photo && Storage::disk('public')->exists($user->profile_photo)) {
+                Storage::disk('public')->delete($user->profile_photo);
+            }
+
+            $user->profile_photo = $request->file('profile_photo')->store('profile_photos', 'public');
+        }
+
+        $user->save();
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Profile updated successfully',
+            'user'    => [
+                'id'            => $user->id,
+                'name'          => $user->name,
+                'last_name'     => $user->last_name,
+                'email'         => $user->email,
+                'phone_number'  => $user->phone_number,
+                'profile_photo' => $user->profile_photo ? asset('storage/' . $user->profile_photo) : null,
+                'roles'         => $user->getRoleNames(),
+                'permissions'   => $user->getAllPermissions()->pluck('name'),
             ]
         ]);
     }

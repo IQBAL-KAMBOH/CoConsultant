@@ -13,12 +13,17 @@ class OneDriveController extends Controller
     /** List root or child items */
     public function root(Request $request)
     {
-        $items = $this->listOneDriveFiles($request->parent_id ?? null);
+        $items = $this->listOneDriveFiles(
+            $request->parent_id ?? null,
+            $request->user_id ?? null
+        );
+
         return response()->json([
             'status' => 'ok',
-            'data'   => $items
+            'data'   => $items,
         ]);
     }
+
 
     /** Create a new folder */
     public function createFolder(Request $request)

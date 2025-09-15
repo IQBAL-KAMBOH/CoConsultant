@@ -25,6 +25,8 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->middleware('jwt.auth')->name('logout');
     Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('jwt.auth')->name('refresh');
     Route::post('/me', [AuthController::class, 'me'])->name('me');
+    Route::post('/profile/update', [AuthController::class, 'updateProfile'])->name('profile.update');
+
 
     Route::apiResource('users', UserController::class);
     Route::apiResource('roles', RoleController::class)->middleware('permission:roles.manage');
