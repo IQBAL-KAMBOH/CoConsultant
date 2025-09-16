@@ -87,14 +87,14 @@ trait OneDriveFileManager
         // Get file IDs where user has view/owner permission
         $fileIds = FilePermission::where('user_id', $userId)
             ->whereIn('permission', ['owner', 'view'])
-            ->pluck('file_id');
+            ->pluck('file_id')->toArray();;
         // If parentId is given, check accessibility
         if ($parentId) {
             $parentFile = File::find($parentId);
 
             if ($parentFile) {
                 // Admin can always access, others must have permission
-                if ($isAdmin || in_array($parentFile->id, $fileIds)) {
+                if (in_array($parentFile->id, $fileIds)) {
                     // Log history
                     $this->logFileAction($parentFile->id, 'view', $userId, [
                         'ip'    => request()->ip(),
