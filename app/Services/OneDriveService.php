@@ -52,6 +52,44 @@ class OneDriveService
 
         return $response->json();
     }
+    public function fetchAllItems($parentId = null)
+    {
+        $token = $this->getAccessToken();
+        $user = config('services.microsoft.storage_user');
+
+        $url = $parentId
+            ? "https://graph.microsoft.com/v1.0/users/{$user}/drive/items/{$parentId}/children"
+            : "https://graph.microsoft.com/v1.0/users/{$user}/drive/root/children";
+
+        $allItems = [];
+
+        do {
+            $response = Http::withToken($token)->get($url);
+
+            if ($response->failed()) {
+                throw new \Exception("Failed to fetch OneDrive items: " . $response->body());
+            }
+
+            $data = $response->json();
+            $items = $data['value'] ?? [];
+
+            foreach ($items as $item) {
+                $allItems[] = $item;
+
+                // If it's a folder, recursively fetch its children
+                if (isset($item['folder'])) {
+                    $children = $this->fetchAllItems($item['id']);
+                    $allItems = array_merge($allItems, $children);
+                }
+            }
+
+            // Handle pagination
+            $url = $data['@odata.nextLink'] ?? null;
+        } while ($url);
+
+        return $allItems;
+    }
+
     public function getDownloadUrl(string $oneDriveFileId): ?string
     {
         try {

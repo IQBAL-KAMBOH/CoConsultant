@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\JsonResponse;
 use Exception;
+use App\Notifications\FileActionNotification;
 use Illuminate\Http\Request;
 
 trait OneDriveFileManager
@@ -134,6 +135,9 @@ trait OneDriveFileManager
             'metadata' => ['onedrive_file_id' => $data['id']],
         ]);
 
+        $this->logedInUser->notify(new FileActionNotification('creatd', $file));
+
+
         return $file;
     }
 
@@ -188,6 +192,7 @@ trait OneDriveFileManager
             'action'   => 'upload',
             'metadata' => ['onedrive_file_id' => $data['id']],
         ]);
+        $this->logedInUser->notify(new FileActionNotification('uploaded', $file));
 
         return $file;
     }
@@ -233,6 +238,7 @@ trait OneDriveFileManager
             'action'   => 'delete',
             'metadata' => ['name' => $file->name],
         ]);
+        $this->logedInUser->notify(new FileActionNotification('deleted', $file));
 
         $file->delete();
     }
@@ -285,6 +291,7 @@ trait OneDriveFileManager
                         ['file_id' => $file->id, 'user_id' => $this->logedInUser->id],
                         ['permission' => 'owner']
                     );
+                    $this->logedInUser->notify(new FileActionNotification('synched', $file));
 
                     $syncedCount++;
                 } catch (Exception $e) {
@@ -361,7 +368,7 @@ trait OneDriveFileManager
                 'path'      => ($data['parentReference']['path'] ?? '') . '/' . $data['name'],
                 'web_url'   => $data['webUrl'] ?? $file->web_url,
             ]);
-
+            $this->logedInUser->notify(new FileActionNotification('moved', $file));
             FileHistory::create([
                 'file_id'  => $file->id,
                 'user_id'  => $this->logedInUser->id,
@@ -407,7 +414,7 @@ trait OneDriveFileManager
                 'action'   => 'rename',
                 'metadata' => ['new_name' => $name],
             ]);
-
+            $this->logedInUser->notify(new FileActionNotification('renamed', $file));
             return response()->json([
                 'status' => 'ok',
                 'message' => 'File renamed successfully',
@@ -450,7 +457,7 @@ trait OneDriveFileManager
                     'message' => 'Could not generate download URL',
                 ], 500);
             }
-
+            $this->logedInUser->notify(new FileActionNotification('downloaded', $file));
             return response()->json([
                 'status' => 'success',
                 'download_url' => $downloadUrl,
@@ -545,6 +552,7 @@ trait OneDriveFileManager
         foreach ($children as $child) {
             $this->softDeleteRecursive($child);
         }
+        $this->logedInUser->notify(new FileActionNotification('trashed', $file));
         $file->delete(); // soft delete
     }
 
@@ -600,6 +608,7 @@ trait OneDriveFileManager
     protected function restoreRecursive(File $file)
     {
         $file->restore();
+        $this->logedInUser->notify(new FileActionNotification('restored', $file));
 
         $children = File::withTrashed()->where('parent_id', $file->id)->get();
         foreach ($children as $child) {

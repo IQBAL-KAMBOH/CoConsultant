@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\PermissionController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\MicrosoftAuthController;
 use App\Http\Controllers\OneDriveController;
+use App\Http\Controllers\Api\NotificationController;
 
 // Auth Routes
 Route::post('/register', [AuthController::class, 'register'])->name('register');
@@ -80,5 +81,11 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::prefix('starred-files')->group(function () {
         Route::get('/', [AuthController::class, 'starredFiles']);
         Route::post('/{id}/star', [AuthController::class, 'toggleStar']);
+    });
+
+    Route::prefix('notifications')->group(function () {
+        Route::get('/unread', [NotificationController::class, 'unread']);   // list unread
+        Route::post('/mark-read', [NotificationController::class, 'markBulkRead']); // bulk mark read
+        Route::delete('/delete', [NotificationController::class, 'bulkDelete']);   // bulk delete
     });
 });
