@@ -79,22 +79,22 @@ trait OneDriveFileManager
                 ->whereNull('parent_id') // root has no parent
                 ->first();
 
-            $parentId = $root?->id; // safe null check
+            // $parentId = $root?->id; // safe null check
         }
 
+
         $userId = $userId ?? $this->logedInUser->id;
-        $isAdmin = $this->logedInUser->hasRole('admin');
         // Get file IDs where user has view/owner permission
         $fileIds = FilePermission::where('user_id', $userId)
             ->whereIn('permission', ['owner', 'view'])
-            ->pluck('file_id')->toArray();;
-        // If parentId is given, check accessibility
+            ->pluck('file_id');
+
         if ($parentId) {
             $parentFile = File::find($parentId);
 
             if ($parentFile) {
                 // Admin can always access, others must have permission
-                if (in_array($parentFile->id, $fileIds)) {
+                if (in_array($parentFile->id, $fileIds->toArray())) {
                     // Log history
                     $this->logFileAction($parentFile->id, 'view', $userId, [
                         'ip'    => request()->ip(),
