@@ -13,22 +13,69 @@ class RolePermissionSeeder extends Seeder
         // Reset cached roles and permissions
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        // Define API permissions
-        $permissions = [
+        // Define API permissions for user management
+        $userPermissions = [
             'users.list',
             'users.view',
             'users.create',
             'users.update',
             'users.delete',
+        ];
 
+        // Define API permissions for file management
+        $filePermissions = [
             'files.list',
+            'files.create',
             'files.upload',
             'files.update',
             'files.delete',
+            'files.trash',
+            'files.trashed',
+            'files.sync',
+            'files.storage-usage',
+            'files.restore',
+            'files.bulk-restore',
+            'files.bulkDelete',
+            'files.bulkTrash',
+            'files.move',
+            'files.rename',
+            'files.star',
+            'files.unstar',
+            'files.recent',
+            'files.download',
+            'file-permissions.assign',
+            'file-permissions.remove',
+            'file-permissions.list',
+            'file-permissions.user-list',
+            'starred-files.list',
+            'starred-files.toggle',
+        ];
 
+        // Define permissions for roles and permissions management
+        $systemPermissions = [
             'roles.manage',
             'permissions.manage',
         ];
+
+        // Define report module permissions
+        $reportPermissions = [
+            'reports.generate',
+            'reports.view',
+        ];
+        $notificationsPermissions = [
+            'notifications.unread',
+            'notifications.mark-read',
+            'notifications.delete',
+        ];
+
+        // Merge all
+        $permissions = array_merge(
+            $userPermissions,
+            $filePermissions,
+            $systemPermissions,
+            $reportPermissions,
+            $notificationsPermissions
+        );
 
         // Create or update permissions
         foreach ($permissions as $perm) {
@@ -38,15 +85,32 @@ class RolePermissionSeeder extends Seeder
             );
         }
 
-        // Roles with permissions
+        // Define roles with their respective permissions
         $roles = [
             'admin' => $permissions, // all permissions
-            'manager' => [
-                'users.list', 'users.view',
-                'files.list', 'files.upload', 'files.update',
-            ],
+
+            'manager' => array_merge(
+                $userPermissions,
+                [
+                    'files.list',
+                    'files.upload',
+                    'files.update',
+                    'files.move',
+                    'files.rename',
+                    'files.star',
+                    'files.unstar',
+                    'files.recent',
+                    'reports.view',
+                ]
+            ),
+
             'user' => [
-                'files.list', 'files.upload',
+                'files.list',
+                'files.upload',
+                'files.star',
+                'files.unstar',
+                'files.recent',
+                'files.download',
             ],
         ];
 
@@ -57,7 +121,7 @@ class RolePermissionSeeder extends Seeder
                 ['name' => $roleName, 'guard_name' => 'api']
             );
 
-            $role->syncPermissions($perms); // replaces givePermissionTo with syncing
+            $role->syncPermissions($perms); // sync permissions
         }
     }
 }

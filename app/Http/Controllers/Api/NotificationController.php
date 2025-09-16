@@ -12,6 +12,7 @@ class NotificationController extends Controller
      */
     public function unread(Request $request)
     {
+
         $notifications = $request->user()->unreadNotifications()->latest()->get();
 
         return response()->json([
