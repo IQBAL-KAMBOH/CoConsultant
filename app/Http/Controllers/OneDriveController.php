@@ -161,7 +161,7 @@ class OneDriveController extends Controller
                 'status' => 'success',
                 'data' => $usage
             ]);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage()
@@ -173,11 +173,8 @@ class OneDriveController extends Controller
     {
         try {
             $files = $this->getRecentFiles();
-            return response()->json([
-                'status' => 'success',
-                'data' => $files
-            ]);
-        } catch (Exception $e) {
+            return $files;
+        } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage()

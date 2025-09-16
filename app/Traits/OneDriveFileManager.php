@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Exception;
 use App\Notifications\FileActionNotification;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 
 trait OneDriveFileManager
 {
@@ -39,6 +40,34 @@ trait OneDriveFileManager
         return new OneDriveService();
     }
 
+    public function logFileAction($fileId, $action, $userId, $metadata = [])
+    {
+        $today = Carbon::today();
+
+        $existingHistory = FileHistory::where('file_id', $fileId)
+            ->where('user_id', $userId)
+            ->where('action', $action)
+            ->whereDate('created_at', $today)
+            ->first();
+
+        if ($existingHistory) {
+            // Update metadata and timestamp instead of creating duplicate
+            $existingHistory->update([
+                'metadata' => $metadata ? json_encode($metadata) : $existingHistory->metadata,
+                'updated_at' => now(),
+            ]);
+        } else {
+            // Insert new history
+            FileHistory::create([
+                'file_id'  => $fileId,
+                'user_id'  => $userId,
+                'action'   => $action, // e.g. 'view', 'upload', 'download'
+                'metadata' => $metadata ? json_encode($metadata) : null,
+            ]);
+        }
+    }
+
+
     /** List files in a OneDrive folder */
     public function listOneDriveFiles($parentId = null, $userId = null)
     {
@@ -54,14 +83,34 @@ trait OneDriveFileManager
         }
 
         $userId = $userId ?? $this->logedInUser->id;
+        $isAdmin = $this->logedInUser->hasRole('admin');
         // Get file IDs where user has view/owner permission
         $fileIds = FilePermission::where('user_id', $userId)
             ->whereIn('permission', ['owner', 'view'])
             ->pluck('file_id');
+        // If parentId is given, check accessibility
+        if ($parentId) {
+            $parentFile = File::find($parentId);
 
-        return File::whereIn('id', $fileIds)
+            if ($parentFile) {
+                // Admin can always access, others must have permission
+                if ($isAdmin || in_array($parentFile->id, $fileIds)) {
+                    // Log history
+                    $this->logFileAction($parentFile->id, 'view', $userId, [
+                        'ip'    => request()->ip(),
+                        'agent' => request()->userAgent(),
+                    ]);
+                } else {
+                    // If not accessible, return empty
+                    return collect();
+                }
+            }
+        }
+        $files = File::whereIn('id', $fileIds)
             ->when($parentId, fn($q) => $q->where('parent_id', $parentId))
             ->get();
+
+        return $files;
     }
 
     /** Create a folder in OneDrive & record in DB */
@@ -128,12 +177,7 @@ trait OneDriveFileManager
             'permission' => 'owner',
         ]);
 
-        FileHistory::create([
-            'file_id' => $file->id,
-            'user_id' => $this->logedInUser->id,
-            'action' => 'create_folder',
-            'metadata' => ['onedrive_file_id' => $data['id']],
-        ]);
+        $this->logFileAction($file->id, 'create_folder', $this->logedInUser->id, ['onedrive_file_id' => $data['id']]);
 
         $this->logedInUser->notify(new FileActionNotification('creatd', $file));
 
@@ -186,12 +230,7 @@ trait OneDriveFileManager
             'permission' => 'owner',
         ]);
 
-        FileHistory::create([
-            'file_id'  => $file->id,
-            'user_id'  => $this->logedInUser->id,
-            'action'   => 'upload',
-            'metadata' => ['onedrive_file_id' => $data['id']],
-        ]);
+        $this->logFileAction($file->id, 'uploaded', $this->logedInUser->id, ['onedrive_file_id' => $data['id']]);
         $this->logedInUser->notify(new FileActionNotification('uploaded', $file));
 
         return $file;
@@ -230,14 +269,8 @@ trait OneDriveFileManager
         foreach ($children as $child) {
             $this->deleteFileAndChildren($child);
         }
-
         FilePermission::where('file_id', $file->id)->delete();
-        FileHistory::create([
-            'file_id'  => $file->id,
-            'user_id'  => $this->logedInUser->id,
-            'action'   => 'delete',
-            'metadata' => ['name' => $file->name],
-        ]);
+        $this->logFileAction($file->id, 'delete', $this->logedInUser->id, ['name' => $file->name]);
         $this->logedInUser->notify(new FileActionNotification('deleted', $file));
 
         $file->delete();
@@ -369,13 +402,7 @@ trait OneDriveFileManager
                 'web_url'   => $data['webUrl'] ?? $file->web_url,
             ]);
             $this->logedInUser->notify(new FileActionNotification('moved', $file));
-            FileHistory::create([
-                'file_id'  => $file->id,
-                'user_id'  => $this->logedInUser->id,
-                'action'   => 'move',
-                'metadata' => ['new_parent_id' => $newParentId],
-            ]);
-
+            $this->logFileAction($file->id, 'move', $this->logedInUser->id, ['new_parent_id' => $newParentId]);
             return response()->json([
                 'status' => 'success',
                 'message' => 'File moved successfully',
@@ -407,13 +434,7 @@ trait OneDriveFileManager
             $file->name = $name;
             $file->save();
 
-
-            FileHistory::create([
-                'file_id'  => $file->id,
-                'user_id'  => $this->logedInUser->id,
-                'action'   => 'rename',
-                'metadata' => ['new_name' => $name],
-            ]);
+            $this->logFileAction($file->id, 'rename', $this->logedInUser->id, ['new_name' => $name]);
             $this->logedInUser->notify(new FileActionNotification('renamed', $file));
             return response()->json([
                 'status' => 'ok',
@@ -457,6 +478,7 @@ trait OneDriveFileManager
                     'message' => 'Could not generate download URL',
                 ], 500);
             }
+            $this->logFileAction($file->id, 'downloaded', $this->logedInUser->id, ['name' => $file->name]);
             $this->logedInUser->notify(new FileActionNotification('downloaded', $file));
             return response()->json([
                 'status' => 'success',
@@ -494,12 +516,7 @@ trait OneDriveFileManager
             $this->softDeleteRecursive($file);
         });
 
-        FileHistory::create([
-            'file_id'  => $file->id,
-            'user_id'  => $this->logedInUser->id,
-            'action'   => 'trash',
-            'metadata' => ['name' => $file->name],
-        ]);
+        $this->logFileAction($file->id, 'trash', $this->logedInUser->id, ['name' => $file->name]);
 
         return response()->json(['status' => 'success', 'message' => 'File moved to trash']);
     }
@@ -593,14 +610,7 @@ trait OneDriveFileManager
         DB::transaction(function () use ($file) {
             $this->restoreRecursive($file);
         });
-
-        FileHistory::create([
-            'file_id'  => $file->id,
-            'user_id'  => $this->logedInUser->id,
-            'action'   => 'restore',
-            'metadata' => ['name' => $file->name],
-        ]);
-
+        $this->logFileAction($file->id, 'restore', $this->logedInUser->id, ['name' => $file->name]);
         return response()->json(['status' => 'success', 'message' => 'File restored successfully']);
     }
 
@@ -624,15 +634,25 @@ trait OneDriveFileManager
     {
         $user = Auth::guard('api')->user();
 
-        $recents = FileHistory::with('file')
+        $histories = FileHistory::with('file')
             ->where('user_id', $user->id)
-            ->orderBy('created_at', 'desc')
-            ->limit(20)
+            ->where('action', 'view')
+            ->orderByDesc('updated_at')
+            ->take(10)
             ->get();
+
 
         return response()->json([
             'status' => 'ok',
-            'data'   => $recents
+            'recent_views' => $histories->map(function ($history) {
+                return [
+                    'file_id'    => $history->file->id,
+                    'name'       => $history->file->name,
+                    'type'       => $history->file->type,
+                    'path'       => $history->file->path,
+                    'viewed_at'  => $history->created_at->toDateTimeString(),
+                ];
+            }),
         ]);
     }
 }
