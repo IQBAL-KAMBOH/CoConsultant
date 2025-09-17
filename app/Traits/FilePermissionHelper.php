@@ -67,18 +67,24 @@ trait FilePermissionHelper
      */
     protected function createFileRecord($userId, $data, $parentId = null, $type = 'file')
     {
-        $file = File::create([
-            'user_id'          => $userId,
-            'name'             => $data['name'],
-            'type'             => $type,
-            'path'             => ($data['parentReference']['path'] ?? '') . '/' . $data['name'],
-            'onedrive_file_id' => $data['id'],
-            'size'             => $data['size'] ?? 0,
-            'storage_type'     => 'onedrive',
-            'parent_id'        => $parentId,
-            'web_url'          => $data['webUrl'] ?? null,
-            'download_url'     => $type === 'file' ? ($data['@microsoft.graph.downloadUrl'] ?? null) : null,
-        ]);
+        $file = File::updateOrCreate(
+            [
+                // Uniqueness check: OneDrive ID
+                'onedrive_file_id' => $data['id'],
+            ],
+            [
+                'user_id'          => $userId,
+                'name'             => $data['name'],
+                'type'             => $type,
+                'path'             => ($data['parentReference']['path'] ?? '') . '/' . $data['name'],
+                'size'             => $data['size'] ?? 0,
+                'storage_type'     => 'onedrive',
+                'parent_id'        => $parentId,
+                'web_url'          => null,
+                'download_url'     => null,
+                'is_trashed'       => false,
+            ]
+        );
 
         $this->grantPermission($file, $userId, 'owner');
         return $file;

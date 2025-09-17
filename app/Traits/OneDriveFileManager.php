@@ -76,7 +76,7 @@ trait OneDriveFileManager
             $parentId = $root->id;
         }
         $fileIds = FilePermission::where('user_id', $userId)->whereIn('permission', ['owner', 'view'])->pluck('file_id');
-        $files = File::whereIn('id', $fileIds)->where('parent_id', $parentId)->get();
+        $files = File::whereIn('id', $fileIds)->where('is_trashed', false)->where('parent_id', $parentId)->get();
 
         return $files;
     }
@@ -310,50 +310,37 @@ trait OneDriveFileManager
         }
     }
 
-
     //////// Trash
-
-
     public function trashFile($fileId)
     {
         $file = File::find($fileId);
         if (!$file) {
             return response()->json(['status' => 'error', 'message' => 'File not found'], 404);
         }
-
         if (!$this->checkPermission($file, 'delete')) {
             return response()->json(['status' => 'error', 'message' => 'Permission denied'], 403);
         }
-
         DB::transaction(function () use ($file) {
             $this->softDeleteRecursive($file);
         });
-
         $this->logFileAction($file->id, 'trash', $this->logedInUser->id, ['name' => $file->name]);
-
         return response()->json(['status' => 'success', 'message' => 'File moved to trash']);
     }
     private function getAllChildrenIds($fileIds)
     {
         $allIds = collect($fileIds);
-
         $children = File::whereIn('parent_id', $fileIds)->pluck('id');
-
         if ($children->isNotEmpty()) {
             $allIds = $allIds->merge($this->getAllChildrenIds($children));
         }
-
         return $allIds;
     }
 
-    // ✅ Bulk Trash (Soft Delete + Children)
     public function trashBulkFiles($file_ids)
     {
         $userId = $userId ?? $this->logedInUser->id;
         $allIds = $this->getAllChildrenIds($file_ids);
-        File::whereIn('id', $allIds)
-            ->where('user_id', $userId)
-            ->delete(); // Soft delete
+        File::whereIn('id', $allIds)->where('user_id', $userId)->update(['is_trashed' => true]);
         return response()->json([
             'status' => 'ok',
             'message' => 'Files (with children) moved to trash successfully'
@@ -361,15 +348,9 @@ trait OneDriveFileManager
     }
     public function bulkRestoreFiles($file_ids)
     {
-
         $userId = $userId ?? $this->logedInUser->id;
         $allIds = $this->getAllChildrenIds($file_ids);
-
-        File::withTrashed()
-            ->whereIn('id', $allIds)
-            ->where('user_id', $userId)
-            ->restore();
-
+        File::whereIn('id', $allIds)->where('user_id', $userId)->update(['is_trashed' => false]);
         return response()->json([
             'status' => 'ok',
             'message' => 'Files (with children) restored successfully'
@@ -383,29 +364,17 @@ trait OneDriveFileManager
             $this->softDeleteRecursive($child);
         }
         $this->logedInUser->notify(new FileActionNotification('trashed', $file));
-        $file->delete(); // soft delete
+        $file->update(['is_trashed' => true]);
     }
-
-
-
     public function listTrashedFiles($userId = null)
     {
         $userId = $userId ?? $this->logedInUser->id;
-
         $fileIds = FilePermission::where('user_id', $userId)
             ->whereIn('permission', ['owner', 'view'])
             ->pluck('file_id');
-
-        $trashed = File::onlyTrashed()->whereIn('id', $fileIds)->get();
-
-        return response()->json([
-            'status' => 'success',
-            'files'  => $trashed,
-        ]);
+        $trashed = File::where('is_trashed', true)->whereIn('id', $fileIds)->get();
+        return $trashed;
     }
-
-
-
 
     /////////////////////////////  Restore
 
@@ -415,11 +384,9 @@ trait OneDriveFileManager
         if (!$file) {
             return response()->json(['status' => 'error', 'message' => 'File not found'], 404);
         }
-
         if (!$this->checkPermission($file, 'restore')) {
             return response()->json(['status' => 'error', 'message' => 'Permission denied'], 403);
         }
-
         DB::transaction(function () use ($file) {
             $this->restoreRecursive($file);
         });
@@ -430,9 +397,8 @@ trait OneDriveFileManager
     /** Recursive restore */
     protected function restoreRecursive(File $file)
     {
-        $file->restore();
+        $file->update(['is_trashed' => false]);
         $this->logedInUser->notify(new FileActionNotification('restored', $file));
-
         $children = File::withTrashed()->where('parent_id', $file->id)->get();
         foreach ($children as $child) {
             $this->restoreRecursive($child);
@@ -446,15 +412,12 @@ trait OneDriveFileManager
     public function getRecentFiles()
     {
         $user = Auth::guard('api')->user();
-
         $histories = FileHistory::with('file')
             ->where('user_id', $user->id)
             ->where('action', 'view')
             ->orderByDesc('updated_at')
             ->take(10)
             ->get();
-
-
         return response()->json([
             'status' => 'ok',
             'recent_views' => $histories->map(function ($history) {

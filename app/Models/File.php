@@ -19,7 +19,11 @@ class File extends Model
         'storage_type',
         'onedrive_file_id',
         'web_url',
-        'download_url'
+        'download_url',
+        'is_trashed',
+    ];
+    protected $casts = [
+        'is_trashed' => 'boolean',
     ];
 
     public function owner()

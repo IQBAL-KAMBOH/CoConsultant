@@ -39,8 +39,6 @@ class RolePermissionSeeder extends Seeder
             'files.bulkTrash',
             'files.move',
             'files.rename',
-            'files.star',
-            'files.unstar',
             'files.recent',
             'files.download',
             'file-permissions.assign',
@@ -107,8 +105,7 @@ class RolePermissionSeeder extends Seeder
                     'files.bulkTrash',
                     'files.move',
                     'files.rename',
-                    'files.star',
-                    'files.unstar',
+
                     'files.recent',
                     'files.download',
                     'file-permissions.assign',

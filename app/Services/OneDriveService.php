@@ -42,6 +42,24 @@ class OneDriveService
             $token = $this->getAccessToken();
             $userPrincipalName = config('services.microsoft.storage_user');
 
+            // 🔍 Only check inside the given parent folder (not recursive)
+            $checkUrl = $parentOneDriveId
+                ? "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/items/{$parentOneDriveId}/children?\$filter=name eq '{$name}'"
+                : "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/root/children?\$filter=name eq '{$name}'";
+
+            $checkResponse = Http::withToken($token)->get($checkUrl);
+
+            if ($checkResponse->failed()) {
+                throw new \Exception("Failed to check OneDrive folder existence: " . $checkResponse->body());
+            }
+
+            $existing = $checkResponse->json()['value'][0] ?? null;
+            if ($existing) {
+                // ✅ Folder exists → return it
+                return $existing;
+            }
+
+            // 🚀 Create new folder if not found
             $body = [
                 'name' => $name,
                 'folder' => new \stdClass(),
@@ -55,14 +73,15 @@ class OneDriveService
             $response = Http::withToken($token)->post($url, $body);
 
             if ($response->failed()) {
-                throw new Exception("Failed to create OneDrive folder: " . $response->body());
+                throw new \Exception("Failed to create OneDrive folder: " . $response->body());
             }
 
             return $response->json();
-        } catch (Exception $e) {
-            throw new Exception("Error creating OneDrive folder: " . $e->getMessage());
+        } catch (\Exception $e) {
+            throw new \Exception("Error creating OneDrive folder: " . $e->getMessage());
         }
     }
+
 
     public function syncDrive($deltaLink = null)
     {
