@@ -35,6 +35,35 @@ class OneDriveService
 
         return $response->json()['access_token'];
     }
+
+    public function createFolder(string $name, ?string $parentOneDriveId = null): array
+    {
+        try {
+            $token = $this->getAccessToken();
+            $userPrincipalName = config('services.microsoft.storage_user');
+
+            $body = [
+                'name' => $name,
+                'folder' => new \stdClass(),
+                '@microsoft.graph.conflictBehavior' => 'rename',
+            ];
+
+            $url = $parentOneDriveId
+                ? "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/items/{$parentOneDriveId}/children"
+                : "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/root/children";
+
+            $response = Http::withToken($token)->post($url, $body);
+
+            if ($response->failed()) {
+                throw new Exception("Failed to create OneDrive folder: " . $response->body());
+            }
+
+            return $response->json();
+        } catch (Exception $e) {
+            throw new Exception("Error creating OneDrive folder: " . $e->getMessage());
+        }
+    }
+
     public function syncDrive($deltaLink = null)
     {
         $token = $this->getAccessToken();
@@ -52,6 +81,7 @@ class OneDriveService
 
         return $response->json();
     }
+
     public function fetchAllItems($parentId = null)
     {
         $token = $this->getAccessToken();
@@ -76,14 +106,12 @@ class OneDriveService
             foreach ($items as $item) {
                 $allItems[] = $item;
 
-                // If it's a folder, recursively fetch its children
                 if (isset($item['folder'])) {
                     $children = $this->fetchAllItems($item['id']);
                     $allItems = array_merge($allItems, $children);
                 }
             }
 
-            // Handle pagination
             $url = $data['@odata.nextLink'] ?? null;
         } while ($url);
 
@@ -111,6 +139,7 @@ class OneDriveService
             throw new Exception("Error generating download URL: " . $e->getMessage());
         }
     }
+
     public function rename(string $oneDriveFileId, string $newName): array
     {
         try {
@@ -133,6 +162,7 @@ class OneDriveService
             throw new Exception("Error renaming OneDrive file: " . $e->getMessage());
         }
     }
+
     public function getStorageUsage()
     {
         try {
@@ -154,7 +184,6 @@ class OneDriveService
             $remaining = $data['quota']['remaining'] ?? 0;
             $deleted = $data['quota']['deleted'] ?? 0;
 
-            // Avoid division by zero
             $percentage = $total > 0 ? round(($used / $total) * 100, 2) : null;
 
             return [
@@ -176,9 +205,6 @@ class OneDriveService
         }
     }
 
-    /**
-     * Convert bytes into human-readable format
-     */
     private function formatBytes($bytes, $precision = 2)
     {
         if ($bytes <= 0) {
@@ -193,7 +219,6 @@ class OneDriveService
 
         return round($value, $precision) . ' ' . $units[$power];
     }
-
 
     public function getRecentFiles()
     {
@@ -213,5 +238,119 @@ class OneDriveService
         } catch (Exception $e) {
             throw new Exception("Error fetching recent files: " . $e->getMessage());
         }
+    }
+
+    /** 🔹 NEW FUNCTIONS (no old code touched) */
+
+    public function delete(string $oneDriveFileId): bool
+    {
+        $token = $this->getAccessToken();
+        $user = config('services.microsoft.storage_user');
+
+        $url = "https://graph.microsoft.com/v1.0/users/{$user}/drive/items/{$oneDriveFileId}";
+
+        $response = Http::withToken($token)->delete($url);
+
+        if ($response->failed()) {
+            throw new Exception("Failed to delete item: " . $response->body());
+        }
+
+        return true;
+    }
+
+    public function move(string $oneDriveFileId, string $newParentId): array
+    {
+        $token = $this->getAccessToken();
+        $user = config('services.microsoft.storage_user');
+
+        $url = "https://graph.microsoft.com/v1.0/users/{$user}/drive/items/{$oneDriveFileId}";
+
+        $response = Http::withToken($token)->patch($url, [
+            'parentReference' => [
+                'id' => $newParentId
+            ]
+        ]);
+
+        if ($response->failed()) {
+            throw new Exception("Failed to move item: " . $response->body());
+        }
+
+        return $response->json();
+    }
+    public function uploadFile($uploadedFile, ?string $parentOneDriveId = null): array
+    {
+        $userPrincipalName = config('services.microsoft.storage_user');
+
+        $path = $parentOneDriveId
+            ? "/items/{$parentOneDriveId}:/{$uploadedFile->getClientOriginalName()}:/content"
+            : "/root:/{$uploadedFile->getClientOriginalName()}:/content";
+
+        $response = Http::withToken($this->getAccessToken())
+            ->withBody(
+                file_get_contents($uploadedFile->getRealPath()),
+                $uploadedFile->getMimeType() // keep your original
+            )
+            ->put("https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive{$path}");
+
+        if ($response->failed()) {
+            throw new \Exception("Failed to upload file: " . $response->body());
+        }
+
+        return $response->json();
+    }
+
+
+    public function copy(string $oneDriveFileId, string $newParentId, string $newName): array
+    {
+        $token = $this->getAccessToken();
+        $user = config('services.microsoft.storage_user');
+
+        $url = "https://graph.microsoft.com/v1.0/users/{$user}/drive/items/{$oneDriveFileId}/copy";
+
+        $response = Http::withToken($token)->post($url, [
+            'parentReference' => ['id' => $newParentId],
+            'name' => $newName
+        ]);
+
+        if ($response->failed()) {
+            throw new Exception("Failed to copy item: " . $response->body());
+        }
+
+        return $response->json();
+    }
+
+    public function createShareLink(string $oneDriveFileId, string $type = 'view'): array
+    {
+        $token = $this->getAccessToken();
+        $user = config('services.microsoft.storage_user');
+
+        $url = "https://graph.microsoft.com/v1.0/users/{$user}/drive/items/{$oneDriveFileId}/createLink";
+
+        $response = Http::withToken($token)->post($url, [
+            'type' => $type, // view | edit | embed
+            'scope' => 'anonymous'
+        ]);
+
+        if ($response->failed()) {
+            throw new Exception("Failed to create share link: " . $response->body());
+        }
+
+        return $response->json();
+    }
+
+    public function preview(string $oneDriveFileId): array
+    {
+        $token = $this->getAccessToken();
+        $user = config('services.microsoft.storage_user');
+
+        $url = "https://graph.microsoft.com/v1.0/users/{$user}/drive/items/{$oneDriveFileId}/preview";
+
+        $response = Http::withToken($token)->post($url, []);
+
+        if ($response->failed()) {
+            throw new Exception("Failed to generate preview: " . $response->body());
+        }
+
+        return $response->json();
     }
 }

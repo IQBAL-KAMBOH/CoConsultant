@@ -23,7 +23,6 @@ trait OneDriveFileManager
 
     protected $logedInUser;
 
-
     public function __construct()
     {
         $this->logedInUser = Auth::guard('api')->user();
@@ -39,224 +38,91 @@ trait OneDriveFileManager
     {
         return new OneDriveService();
     }
-
-    public function logFileAction($fileId, $action, $userId, $metadata = [])
+    /**
+     * Notify + log any file action
+     */
+    protected function finalizeFileAction(File $file, string $action, array $metadata = [])
     {
-        $today = Carbon::today();
-
-        $existingHistory = FileHistory::where('file_id', $fileId)
-            ->where('user_id', $userId)
-            ->where('action', $action)
-            ->whereDate('created_at', $today)
-            ->first();
-
-        if ($existingHistory) {
-            // Update metadata and timestamp instead of creating duplicate
-            $existingHistory->update([
-                'metadata' => $metadata ? json_encode($metadata) : $existingHistory->metadata,
-                'updated_at' => now(),
-            ]);
-        } else {
-            // Insert new history
-            FileHistory::create([
-                'file_id'  => $fileId,
-                'user_id'  => $userId,
-                'action'   => $action, // e.g. 'view', 'upload', 'download'
-                'metadata' => $metadata ? json_encode($metadata) : null,
-            ]);
-        }
+        $this->logFileAction($file->id, $action, $this->logedInUser->id, $metadata);
+        $this->logedInUser->notify(new FileActionNotification($action, $file));
     }
 
+    protected function ensureUserRoot($userId = null)
+    {
+        $user = $userId ? \App\Models\User::find($userId) : $this->logedInUser;
+        if (!$user) {
+            throw new \Exception("User not found");
+        }
+        $root = File::where('user_id', $user->id)->whereNull('parent_id')->where('type', 'folder')->first();
+        if ($root) {
+            return $root;
+        }
+        $rootName = "UserRoot_" . $user->id;
+        $data = $this->oneDrive()->createFolder($rootName);
+        $root = $this->createFileRecord($userId, $data, null, 'folder');
+        $this->grantPermission($root, $userId, 'owner');
+        $this->logFileAction($root->id, 'create_root', $user->id, ['onedrive_file_id' => $data['id']]);
+        $user->notify(new FileActionNotification('root_created', $root));
+
+        return $root;
+    }
 
     /** List files in a OneDrive folder */
     public function listOneDriveFiles($parentId = null, $userId = null)
     {
-
-
-        // If no parentId, fetch the root folder record
-        if (!$parentId && !$userId) {
-            $root = File::where('name', 'root')
-                ->whereNull('parent_id') // root has no parent
-                ->first();
-
-            // $parentId = $root?->id; // safe null check
-        }
-
-
         $userId = $userId ?? $this->logedInUser->id;
-        // Get file IDs where user has view/owner permission
-        $fileIds = FilePermission::where('user_id', $userId)
-            ->whereIn('permission', ['owner', 'view'])
-            ->pluck('file_id');
-
-        if ($parentId) {
-            $parentFile = File::find($parentId);
-
-            if ($parentFile) {
-                // Admin can always access, others must have permission
-                if (in_array($parentFile->id, $fileIds->toArray())) {
-                    // Log history
-                    $this->logFileAction($parentFile->id, 'view', $userId, [
-                        'ip'    => request()->ip(),
-                        'agent' => request()->userAgent(),
-                    ]);
-                } else {
-                    // If not accessible, return empty
-                    return collect();
-                }
-            }
+        if (!$parentId) {
+            $root = $this->ensureUserRoot($userId);
+            $parentId = $root->id;
         }
-        $files = File::whereIn('id', $fileIds)
-            ->when($parentId, fn($q) => $q->where('parent_id', $parentId))
-            ->get();
+        $fileIds = FilePermission::where('user_id', $userId)->whereIn('permission', ['owner', 'view'])->pluck('file_id');
+        $files = File::whereIn('id', $fileIds)->where('parent_id', $parentId)->get();
 
         return $files;
     }
-
-    /** Create a folder in OneDrive & record in DB */
     public function createOneDriveFolder($name, $parentId = null)
     {
-        // ✅ If no parent folder → check role
+        $userId = $this->logedInUser->id;
         if (!$parentId) {
-            if (!$this->logedInUser->hasRole('admin')) {
-                return [
-                    'status'  => 'error',
-                    'message' => 'Only admins can create folders in root'
-                ];
-            }
-        } else {
-            // ✅ If creating inside a folder, check permission
-            $dbFile = File::find($parentId);
-            if (!$this->checkPermission($dbFile, 'create_folder')) {
-                return [
-                    'status'  => 'error',
-                    'message' => 'Permission denied for this folder'
-                ];
-            }
+            $root = $this->ensureUserRoot($userId);
+            $parentId = $root->id;
         }
-        $token = $this->oneDrive()->getAccessToken();
-        $userPrincipalName = config('services.microsoft.storage_user');
-
-        $body = [
-            'name' => $name,
-            'folder' => new \stdClass(),
-            '@microsoft.graph.conflictBehavior' => 'rename',
-        ];
-
-        $parent = $parentId ? File::find($parentId) : null;
-        $parentOneDriveId = $parent?->onedrive_file_id;
-
-
-        $url = $parentOneDriveId
-            ? "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/items/{$parentOneDriveId}/children"
-            : "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/root/children";
-
-        $response = Http::withToken($token)->post($url, $body);
-
-        if ($response->failed()) {
-            throw new \Exception("Failed to create folder: " . $response->body());
+        $dbFile = File::find($parentId);
+        if (!$dbFile || !$this->checkPermission($dbFile, 'create_folder')) {
+            return ['status' => 'error', 'message' => 'Permission denied for this folder'];
         }
-
-        $data = $response->json();
-
-        $file = File::create([
-            'user_id'         => $this->logedInUser->id,
-            'name'            => $data['name'],
-            'type'            => 'folder',
-            'path'            => $data['parentReference']['path'] . '/' . $data['name'], // human readable path
-            'onedrive_file_id' => $data['id'], // Graph ID
-            'size'            => 0,
-            'storage_type'    => 'onedrive',
-            'parent_id'       => $parentId ?? null,
-            'web_url'         => $data['webUrl'] ?? null,
-        ]);
-
-        FilePermission::create([
-            'file_id' => $file->id,
-            'user_id' => $this->logedInUser->id,
-            'permission' => 'owner',
-        ]);
-
-        $this->logFileAction($file->id, 'create_folder', $this->logedInUser->id, ['onedrive_file_id' => $data['id']]);
-
-        $this->logedInUser->notify(new FileActionNotification('creatd', $file));
-
+        $data = $this->oneDrive()->createFolder($name, $dbFile->onedrive_file_id);
+        $file = $this->createFileRecord($userId, $data, $parentId, 'folder');
+        $this->finalizeFileAction($file, 'create_folder', ['onedrive_file_id' => $data['id']]);
 
         return $file;
     }
 
-    /** Upload file */
+
     public function uploadFileToOneDrive($parentId, $uploadedFile)
     {
-        $token = $this->oneDrive()->getAccessToken();
-        $userPrincipalName = config('services.microsoft.storage_user');
-
+        $userId = $this->logedInUser->id;
         $parent = $parentId ? File::find($parentId) : null;
-        $parentOneDriveId = $parent?->onedrive_file_id;
-
-        $path = $parentOneDriveId
-            ? "/items/{$parentOneDriveId}:/{$uploadedFile->getClientOriginalName()}:/content"
-            : "/root:/{$uploadedFile->getClientOriginalName()}:/content";
-
-        $response = Http::withToken($token)
-            ->withBody(
-                file_get_contents($uploadedFile->getRealPath()),
-                $uploadedFile->getMimeType() // e.g. "application/pdf"
-            )
-            ->put("https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive{$path}");
-
-        if ($response->failed()) {
-            throw new \Exception("Failed to upload file: " . $response->body());
+        if ($parentId && (!$parent || !$this->checkPermission($parent, 'upload'))) {
+            return ['status' => 'error', 'message' => 'Permission denied'];
         }
-
-        $data = $response->json();
-
-        $file = File::create([
-            'user_id'         => $this->logedInUser->id,
-            'name'            => $data['name'],
-            'type'            => 'file',
-            'path'            => $data['parentReference']['path'] . '/' . $data['name'],
-            'onedrive_file_id' => $data['id'],
-            'size'            => $uploadedFile->getSize(),
-            'parent_id'       => $parent?->id,
-            'storage_type'    => 'onedrive',
-            'web_url'         => $data['webUrl'] ?? null,
-            'download_url' => $data['@microsoft.graph.downloadUrl']
-        ]);
-
-        FilePermission::create([
-            'file_id'    => $file->id,
-            'user_id'    => $this->logedInUser->id,
-            'permission' => 'owner',
-        ]);
-
-        $this->logFileAction($file->id, 'uploaded', $this->logedInUser->id, ['onedrive_file_id' => $data['id']]);
-        $this->logedInUser->notify(new FileActionNotification('uploaded', $file));
+        $data = $this->oneDrive()->uploadFile($uploadedFile, $parent?->onedrive_file_id);
+        $file = $this->createFileRecord($userId, $data, $parent?->id, 'file');
+        $this->finalizeFileAction($file, 'uploaded', ['onedrive_file_id' => $data['id']]);
 
         return $file;
     }
+
 
     /** Delete item */
     public function deleteOneDriveItem($fileId)
     {
         $file = File::withTrashed()->find($fileId);
         if (!$file) return ['status' => 'error', 'message' => 'File not found'];
-
-        // 🔑 Check delete permission
         if (!$this->checkPermission($file, 'delete')) {
             return ['status' => 'error', 'message' => 'Permission denied'];
         }
-
-        $token = $this->oneDrive()->getAccessToken();
-        $userPrincipalName = config('services.microsoft.storage_user');
-
-        $response = Http::withToken($token)
-            ->delete("https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/items/{$file->onedrive_file_id}");
-
-        if ($response->failed()) {
-            throw new \Exception("Failed to delete OneDrive item: " . $response->body());
-        }
-
+        $this->oneDrive()->delete($file->onedrive_file_id);
         $this->deleteFileAndChildren($file);
 
         return ['status' => 'success'];
@@ -272,8 +138,62 @@ trait OneDriveFileManager
         FilePermission::where('file_id', $file->id)->delete();
         $this->logFileAction($file->id, 'delete', $this->logedInUser->id, ['name' => $file->name]);
         $this->logedInUser->notify(new FileActionNotification('deleted', $file));
-
         $file->delete();
+    }
+
+    public function moveOneDrive($fileId, $newParentId = null)
+    {
+        try {
+            $file = File::find($fileId);
+            if (!$file) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'File not found in DB',
+                ], 404);
+            }
+            $newParent = $newParentId ? File::find($newParentId) : null;
+            if ($newParentId && !$newParent) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'New parent folder not found in DB',
+                ], 404);
+            }
+            $data = $this->oneDrive()->move($file->onedrive_file_id, $newParent?->onedrive_file_id);
+            // Update in DB
+            $file->update([
+                'parent_id' => $newParent?->id,
+                'path'      => ($data['parentReference']['path'] ?? '') . '/' . $data['name'],
+                'web_url'   => $data['webUrl'] ?? $file->web_url,
+            ]);
+            $this->logedInUser->notify(new FileActionNotification('moved', $file));
+            $this->logFileAction($file->id, 'move', $this->logedInUser->id, ['new_parent_id' => $newParentId]);
+            return response()->json([
+                'status' => 'success',
+                'message' => 'File moved successfully',
+                'file' => $file,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Move failed',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    public function renameOneDriveFile($fileId, $name)
+    {
+        $file = File::find($fileId);
+        if (!$file) {
+            return response()->json(['status' => 'error', 'message' => 'File not found'], 404);
+        }
+        $this->oneDrive()->rename($file->onedrive_file_id, $name);
+        $file->update(['name' => $name]);
+        $this->finalizeFileAction($file, 'rename', ['new_name' => $name]);
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'File renamed successfully',
+            'file' => $file,
+        ]);
     }
     public function syncOneDrive()
     {
@@ -281,7 +201,6 @@ trait OneDriveFileManager
             // Load last saved deltaLink (store this in DB or cache)
             $deltaLink = cache()->get('onedrive_delta');
             $response  = $this->oneDrive()->syncDrive($deltaLink);
-
             $syncedCount = 0;
             DB::beginTransaction();
 
@@ -291,7 +210,6 @@ trait OneDriveFileManager
                         File::where('onedrive_file_id', $item['id'])->delete();
                         continue;
                     }
-
                     $isFolder = isset($item['folder']);
                     $parentId = null;
 
@@ -319,11 +237,7 @@ trait OneDriveFileManager
                             'download_url' => $isFolder ? null : ($item['@microsoft.graph.downloadUrl'] ?? null),
                         ]
                     );
-
-                    FilePermission::firstOrCreate(
-                        ['file_id' => $file->id, 'user_id' => $this->logedInUser->id],
-                        ['permission' => 'owner']
-                    );
+                    $this->grantPermission($file, $this->logedInUser->id, 'owner');
                     $this->logedInUser->notify(new FileActionNotification('synched', $file));
 
                     $syncedCount++;
@@ -357,99 +271,6 @@ trait OneDriveFileManager
             ], 500);
         }
     }
-    public function moveOneDrive($fileId, $newParentId = null)
-    {
-        try {
-            $file = File::find($fileId);
-            if (!$file) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'File not found in DB',
-                ], 404);
-            }
-
-            $newParent = $newParentId ? File::find($newParentId) : null;
-            if ($newParentId && !$newParent) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'New parent folder not found in DB',
-                ], 404);
-            }
-
-            $token = $this->oneDrive()->getAccessToken();
-            $userPrincipalName = config('services.microsoft.storage_user');
-
-            // OneDrive move API → PATCH parentReference
-            $url = "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/items/{$file->onedrive_file_id}";
-            $body = [
-                'parentReference' => [
-                    'id' => $newParent?->onedrive_file_id ?? null,
-                ],
-            ];
-
-            $response = Http::withToken($token)->patch($url, $body);
-
-            if ($response->failed()) {
-                throw new \Exception("OneDrive move failed: " . $response->body());
-            }
-
-            $data = $response->json();
-
-            // Update in DB
-            $file->update([
-                'parent_id' => $newParent?->id,
-                'path'      => ($data['parentReference']['path'] ?? '') . '/' . $data['name'],
-                'web_url'   => $data['webUrl'] ?? $file->web_url,
-            ]);
-            $this->logedInUser->notify(new FileActionNotification('moved', $file));
-            $this->logFileAction($file->id, 'move', $this->logedInUser->id, ['new_parent_id' => $newParentId]);
-            return response()->json([
-                'status' => 'success',
-                'message' => 'File moved successfully',
-                'file' => $file,
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Move failed',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }
-    public function renameOneDriveFile($fileId, $name)
-    {
-        try {
-            $file = File::find($fileId);
-            if (!$file) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'File not found in DB',
-                ], 404);
-            }
-
-            // 1. Rename in OneDrive
-            $oneDriveResponse = $this->oneDrive()->rename($file->onedrive_file_id, $name);
-
-            // 2. Update local DB
-            $file->name = $name;
-            $file->save();
-
-            $this->logFileAction($file->id, 'rename', $this->logedInUser->id, ['new_name' => $name]);
-            $this->logedInUser->notify(new FileActionNotification('renamed', $file));
-            return response()->json([
-                'status' => 'ok',
-                'message' => 'File renamed successfully',
-                'file' => $file,
-                'onedrive' => $oneDriveResponse
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Rename failed',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }
 
     public function handleFileDownloadUrl($fileId)
     {
@@ -461,17 +282,13 @@ trait OneDriveFileManager
                     'message' => 'File not found',
                 ], 404);
             }
-
-            // ✅ check permission if you want
             if (!$this->checkPermission($file, 'view')) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Permission denied',
                 ], 403);
             }
-
             $downloadUrl = $this->oneDrive()->getDownloadUrl($file->onedrive_file_id);
-
             if (!$downloadUrl) {
                 return response()->json([
                     'status' => 'error',
@@ -492,10 +309,6 @@ trait OneDriveFileManager
             ], 500);
         }
     }
-
-
-
-
 
 
     //////// Trash
