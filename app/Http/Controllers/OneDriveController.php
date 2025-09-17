@@ -128,6 +128,17 @@ class OneDriveController extends Controller
 
         return response()->json($result);
     }
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'file_ids' => 'required|array',
+            'file_ids.*' => 'integer|exists:files,id'
+        ]);
+
+        $result = $this->deleteBulkFiles($request->file_ids);
+
+        return response()->json($result);
+    }
 
     public function restore($id)
     {

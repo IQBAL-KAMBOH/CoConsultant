@@ -66,6 +66,7 @@ Route::middleware(['jwt.auth'])->group(function () {
         Route::post('/rename/{fileId}', [OneDriveController::class, 'rename'])->middleware('permission:files.rename');
         Route::get('/file/{id}/download-url', [OneDriveController::class, 'getFileDownloadUrl'])->middleware('permission:files.download');
         Route::post('/trash/{id}', [OneDriveController::class, 'trash'])->middleware('permission:files.trash');
+        Route::post('/bulk-delete', [OneDriveController::class, 'bulkDelete'])->middleware('permission:files.delete');
         Route::post('/bulk-trash', [OneDriveController::class, 'bulkTrash'])->middleware('permission:files.bulkTrash');
         Route::post('/restore/{id}', [OneDriveController::class, 'restore'])->middleware('permission:files.restore');
         Route::post('/bulk-restore', [OneDriveController::class, 'bulkRestore'])->middleware('permission:files.bulk-restore');

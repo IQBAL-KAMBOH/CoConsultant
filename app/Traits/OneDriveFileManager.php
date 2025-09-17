@@ -123,32 +123,7 @@ trait OneDriveFileManager
     }
 
 
-    /** Delete item */
-    public function deleteOneDriveItem($fileId)
-    {
-        $file = File::withTrashed()->find($fileId);
-        if (!$file) return ['status' => 'error', 'message' => 'File not found'];
-        if (!$this->checkPermission($file, 'delete')) {
-            return ['status' => 'error', 'message' => 'Permission denied'];
-        }
-        $this->oneDrive()->delete($file->onedrive_file_id);
-        $this->deleteFileAndChildren($file);
 
-        return ['status' => 'success'];
-    }
-
-
-    protected function deleteFileAndChildren($file)
-    {
-        $children = File::where('parent_id', $file->id)->get();
-        foreach ($children as $child) {
-            $this->deleteFileAndChildren($child);
-        }
-        FilePermission::where('file_id', $file->id)->delete();
-        $this->logFileAction($file->id, 'delete', $this->logedInUser->id, ['name' => $file->name]);
-        $this->logedInUser->notify(new FileActionNotification('deleted', $file));
-        $file->delete();
-    }
 
     public function moveOneDrive($fileId, $newParentId = null)
     {
@@ -344,6 +319,44 @@ trait OneDriveFileManager
         }
         return $allIds;
     }
+    public function deleteBulkFiles($file_ids)
+    {
+        $userId = $this->logedInUser->id;
+        $allIds = $this->getAllChildrenIds($file_ids);
+
+        $files = File::whereIn('id', $allIds)
+            ->where('user_id', $userId)
+            ->get();
+        if ($files->isEmpty()) {
+            return [
+                'status'  => 'error',
+                'message' => 'Files Not Found'
+            ];
+        }
+
+        foreach ($files as $file) {
+            if (!$this->checkPermission($file, 'delete')) {
+                \Log::warning("User {$userId} attempted to delete file {$file->id} without permission.");
+                continue;
+            }
+            if ($file->onedrive_file_id) {
+                try {
+                    $this->oneDrive()->delete($file->onedrive_file_id);
+                } catch (\Exception $e) {
+                    \Log::error("OneDrive delete failed for file {$file->id}: " . $e->getMessage());
+                }
+            }
+
+            $file->delete();
+        }
+
+        return response()->json([
+            'status'  => 'ok',
+            'message' => 'Files (with children) Deleted successfully'
+        ]);
+    }
+
+
 
     public function trashBulkFiles($file_ids)
     {
