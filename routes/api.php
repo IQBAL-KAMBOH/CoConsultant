@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\FilePermissionController;
 use App\Http\Controllers\Api\FileReportController;
 use App\Http\Controllers\Api\FilesController;
@@ -29,6 +30,9 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('jwt.auth')->name('refresh');
     Route::post('/me', [AuthController::class, 'me'])->name('me');
     Route::post('/profile/update', [AuthController::class, 'updateProfile'])->name('profile.update');
+    Route::post('/password/update', [AuthController::class, 'updatePassword'])->name('password.update');
+
+    Route::get('/dashboard', [DashboardController::class, 'index']);
 
 
     Route::apiResource('users', UserController::class);

@@ -132,17 +132,15 @@ class AuthController extends Controller
 
         $request->validate([
             'name'          => 'sometimes|string|max:255',
-            'last_name'     => 'sometimes|string|max:255',
+            'last_name'     => 'nullable',
             'email'         => 'sometimes|email|unique:users,email,' . $user->id,
-            'password'      => 'sometimes|min:6|confirmed',
-            'phone_number'  => 'sometimes|string|max:20',
-            'profile_photo' => 'sometimes|image|mimes:jpg,jpeg,png|max:2048',
+            'phone_number'  => 'nullable',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ]);
 
         if ($request->has('name')) $user->name = $request->name;
         if ($request->has('last_name')) $user->last_name = $request->last_name;
         if ($request->has('email')) $user->email = $request->email;
-        if ($request->has('password')) $user->password = bcrypt($request->password);
         if ($request->has('phone_number')) $user->phone_number = $request->phone_number;
 
         if ($request->hasFile('profile_photo')) {
@@ -169,6 +167,30 @@ class AuthController extends Controller
                 'roles'         => $user->getRoleNames(),
                 'permissions'   => $user->getAllPermissions()->pluck('name'),
             ]
+        ]);
+    }
+    public function updatePassword(Request $request)
+    {
+        $user = Auth::guard('api')->user();
+
+        $request->validate([
+            'current_password' => 'required|string',
+            'new_password'     => 'required|string|min:6|confirmed',
+        ]);
+
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Current password is incorrect',
+            ], 400);
+        }
+
+        $user->password = Hash::make($request->new_password);
+        $user->save();
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Password updated successfully',
         ]);
     }
     /**
