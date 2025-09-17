@@ -77,7 +77,16 @@ trait OneDriveFileManager
         }
         $fileIds = FilePermission::where('user_id', $userId)->whereIn('permission', ['owner', 'view'])->pluck('file_id');
         $files = File::whereIn('id', $fileIds)->where('is_trashed', false)->where('parent_id', $parentId)->get();
+        // Add is_starred property
+        $starredIds = Auth::guard('api')->user()
+            ->starredFiles()
+            ->pluck('file_id')
+            ->toArray();
 
+        $files->map(function ($file) use ($starredIds) {
+            $file->is_starred = in_array($file->id, $starredIds);
+            return $file;
+        });
         return $files;
     }
     public function createOneDriveFolder($name, $parentId = null)
