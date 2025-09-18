@@ -99,6 +99,19 @@ class OneDriveController extends Controller
 
         return $this->moveOneDrive($fileId, $newparentId);
     }
+    public function moveFile(Request $request)
+    {
+        $request->validate([
+            'file_id' => 'required',
+            'new_parent_id' => 'required',
+            'new_name'      => 'nullable',
+        ]);
+
+        $fileId = $request->file_id ?? null;
+        $newparentId = $request->new_parent_id ?? null;
+
+        return $this->moveOneDrive($fileId, $newparentId);
+    }
     public function rename(Request $request, $fileId)
     {
         $request->validate([
