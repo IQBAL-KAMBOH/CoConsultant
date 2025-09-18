@@ -87,7 +87,13 @@ trait OneDriveFileManager
             $file->is_starred = in_array($file->id, $starredIds);
             return $file;
         });
-        return $files;
+
+
+        return [
+            'status' => 'ok',
+            'root_id' => $parentId,
+            'data'   => $files,
+        ];
     }
     public function createOneDriveFolder($name, $parentId = null)
     {

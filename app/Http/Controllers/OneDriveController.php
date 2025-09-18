@@ -18,10 +18,7 @@ class OneDriveController extends Controller
             $request->user_id ?? null
         );
 
-        return response()->json([
-            'status' => 'ok',
-            'data'   => $items,
-        ]);
+        return response()->json($items);
     }
 
 
