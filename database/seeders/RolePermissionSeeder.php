@@ -120,8 +120,8 @@ class RolePermissionSeeder extends Seeder
             'user' => [
                 'files.list',
                 'files.upload',
-                'files.star',
-                'files.unstar',
+                'starred-files.list',
+                'starred-files.toggle',
                 'files.recent',
                 'files.download',
             ],
