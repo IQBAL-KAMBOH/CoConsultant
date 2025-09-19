@@ -53,6 +53,27 @@ trait OneDriveFileManager
         if (!$user) {
             throw new \Exception("User not found");
         }
+        if ($user->hasRole('admin')) {
+            $root = File::where('name', 'root')
+                ->whereNull('parent_id')
+                ->where('type', 'folder')
+                ->first();
+
+            if (!$root) {
+                // Fetch actual OneDrive root
+                $data = $this->getOneDriveRoot();
+
+                $root = $this->createFileRecord(null, $data, null, 'folder');
+                $this->grantPermission($root, $user->id, 'owner');
+                $this->logFileAction($root->id, 'sync_global_root', $user->id, [
+                    'onedrive_file_id' => $data['id']
+                ]);
+                $user->notify(new FileActionNotification('global_root_synced', $root));
+            }
+
+            return $root;
+        }
+
         $root = File::where('user_id', $user->id)->whereNull('parent_id')->where('type', 'folder')->first();
         if ($root) {
             return $root;

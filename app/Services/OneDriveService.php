@@ -317,6 +317,21 @@ class OneDriveService
 
         return $response->json();
     }
+    public function getOneDriveRoot()
+    {
+        $token = $this->getAccessToken();
+        $userPrincipalName = config('services.microsoft.storage_user');
+
+        $url = "https://graph.microsoft.com/v1.0/users/{$userPrincipalName}/drive/root";
+
+        $response = Http::withToken($token)->get($url);
+
+        if ($response->failed()) {
+            throw new \Exception("Failed to fetch OneDrive root: " . $response->body());
+        }
+
+        return $response->json(); // returns DriveItem metadata
+    }
 
 
     public function copy(string $oneDriveFileId, string $newParentId, string $newName): array
