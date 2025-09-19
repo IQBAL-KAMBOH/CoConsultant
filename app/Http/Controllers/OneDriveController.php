@@ -45,11 +45,12 @@ class OneDriveController extends Controller
         ]);
     }
 
-    /** Upload a file */
+    /** Upload multiple files */
     public function upload(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'file'      => 'required|file',
+            'files'     => 'required|array',
+            'files.*'   => 'file', // validate each file
             'parent_id' => 'nullable|string'
         ]);
 
@@ -60,14 +61,17 @@ class OneDriveController extends Controller
             ], 422);
         }
 
-        $file = $this->uploadFileToOneDrive(
-            $request->parent_id,
-            $request->file('file')
-        );
+        $uploadedFiles = [];
+        foreach ($request->file('files') as $file) {
+            $uploadedFiles[] = $this->uploadFileToOneDrive(
+                $request->parent_id,
+                $file
+            );
+        }
 
         return response()->json([
             'status' => 'ok',
-            'file'   => $file
+            'files'  => $uploadedFiles
         ]);
     }
 
