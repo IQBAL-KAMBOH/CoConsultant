@@ -34,11 +34,14 @@ class AuthController extends Controller
         return response()->json([
             'status' => 'success',
             'user' => [
-                'id'          => $user->id,
-                'name'        => $user->name,
-                'email'       => $user->email,
-                'roles'       => $user->getRoleNames(),
-                'permissions' => $user->getAllPermissions()->pluck('name'),
+                'id'            => $user->id,
+                'name'          => $user->name,
+                'last_name'     => $user->last_name,
+                'email'         => $user->email,
+                'phone_number'  => $user->phone_number,
+                'profile_photo' => $user->profile_photo ? asset('storage/' . $user->profile_photo) : null,
+                'roles'         => $user->getRoleNames(),
+                'permissions'   => $user->getAllPermissions()->pluck('name'),
             ],
             'authorisation' => [
                 'token' => $token,
