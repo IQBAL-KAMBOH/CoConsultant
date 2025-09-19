@@ -105,7 +105,6 @@ class RolePermissionSeeder extends Seeder
                     'files.bulkTrash',
                     'files.move',
                     'files.rename',
-
                     'files.recent',
                     'files.download',
                     'file-permissions.assign',

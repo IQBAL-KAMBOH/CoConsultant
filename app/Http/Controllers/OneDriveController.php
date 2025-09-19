@@ -27,7 +27,7 @@ class OneDriveController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name'      => 'required|string|max:255',
-            'parent_id' => 'nullable|string'
+            'parent_id' => 'nullable'
         ]);
 
         if ($validator->fails()) {
